@@ -1,6 +1,6 @@
 import { MongoClient, Db, Collection } from 'mongodb';
 import type { IStateStore } from '../../types/services.js';
-import type { Competition } from '../../types/index.js';
+import type { Competition, AgentStatus } from '../../types/index.js';
 import { config } from '../../config.js';
 
 export class RealStateStore implements IStateStore {
@@ -57,6 +57,25 @@ export class RealStateStore implements IStateStore {
 
     if (result.matchedCount === 0) {
       throw new Error(`Competition not found: ${id}`);
+    }
+  }
+
+  async updateAgentStatus(
+    competitionId: string,
+    agentStatus: AgentStatus
+  ): Promise<void> {
+    await this.ensureConnected();
+
+    console.log(`[MongoState] Updating agent ${agentStatus.id} in competition: ${competitionId}`);
+
+    // Atomic update of a single agent in the agents array
+    const result = await this.competitions!.updateOne(
+      { id: competitionId, 'agents.id': agentStatus.id },
+      { $set: { 'agents.$': agentStatus } }
+    );
+
+    if (result.matchedCount === 0) {
+      throw new Error(`Competition or agent not found: ${competitionId}/${agentStatus.id}`);
     }
   }
 

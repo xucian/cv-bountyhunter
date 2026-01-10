@@ -74,7 +74,7 @@ export class Orchestrator {
       // Mark agent as solving
       agentStatus.status = 'solving';
       agentStatus.startedAt = Date.now();
-      await this.updateAgentStatus(competition.id, agentStatus);
+      await this.services.state.updateAgentStatus(competition.id, agentStatus);
 
       try {
         // Build the agent URL
@@ -93,12 +93,12 @@ export class Orchestrator {
         agentStatus.status = solution.success ? 'done' : 'failed';
         agentStatus.solution = solution;
         agentStatus.completedAt = Date.now();
-        await this.updateAgentStatus(competition.id, agentStatus);
+        await this.services.state.updateAgentStatus(competition.id, agentStatus);
       } catch (error) {
         // Handle agent failure
         agentStatus.status = 'failed';
         agentStatus.completedAt = Date.now();
-        await this.updateAgentStatus(competition.id, agentStatus);
+        await this.services.state.updateAgentStatus(competition.id, agentStatus);
 
         console.error(`Agent ${agentConfig.id} failed:`, error);
       }
@@ -172,28 +172,6 @@ export class Orchestrator {
       name: agent.name,
       status: 'idle' as const,
     }));
-  }
-
-  /**
-   * Update a single agent's status in the competition
-   */
-  private async updateAgentStatus(
-    competitionId: string,
-    agentStatus: AgentStatus
-  ): Promise<void> {
-    const competition = await this.services.state.getCompetition(competitionId);
-    if (!competition) return;
-
-    const agentIndex = competition.agents.findIndex((a) => a.id === agentStatus.id);
-    if (agentIndex === -1) return;
-
-    // Update the agent in the array
-    const updatedAgents = [...competition.agents];
-    updatedAgents[agentIndex] = agentStatus;
-
-    await this.services.state.updateCompetition(competitionId, {
-      agents: updatedAgents,
-    });
   }
 
   /**
