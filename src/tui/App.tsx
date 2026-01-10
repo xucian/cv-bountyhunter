@@ -7,7 +7,7 @@ import { ResultsView } from './components/ResultsView.js';
 import { useCompetition } from './hooks/useCompetition.js';
 import { createServices } from '../services/index.js';
 import { config } from '../config.js';
-import type { Competition, Issue, Solution } from '../types/index.js';
+import type { Competition, Issue, Solution, PaymentRecord } from '../types/index.js';
 
 type ViewState = 'menu' | 'competition' | 'results';
 
@@ -141,25 +141,62 @@ Provide a complete code solution to fix this issue.`;
           const walletAddress = winnerConfig?.walletAddress;
 
           if (walletAddress) {
+            // Create payment record
+            const paymentId = nanoid();
+            const paymentRecord: PaymentRecord = {
+              id: paymentId,
+              competitionId: comp.id,
+              agentId: reviewResult.winnerId!,
+              walletAddress,
+              amount: comp.bountyAmount,
+              txHash: '',
+              status: 'pending',
+              network: config.x402?.network || 'base-sepolia',
+              createdAt: Date.now(),
+            };
+
             try {
               const txHash = await services.payment.sendBonus(walletAddress, comp.bountyAmount);
+
+              // Update payment record with success
+              paymentRecord.txHash = txHash;
+              paymentRecord.status = 'confirmed';
+              paymentRecord.confirmedAt = Date.now();
+
+              // Save payment record to MongoDB
+              await services.state.savePaymentRecord(paymentRecord)
+                .catch(err => console.error('[State] Failed to save payment record:', err));
+
               setPaymentResult(txHash);
-              // Update MongoDB with final state
+
+              // Update competition with payment info
               await services.state.updateCompetition(comp.id, {
                 status: 'completed',
                 winner: reviewResult.winnerId,
                 paymentTxHash: txHash,
+                paymentRecord,
                 completedAt: Date.now(),
               }).catch(err => console.error('[State] Update failed:', err));
             } catch (error) {
               console.error('Payment failed:', error);
               const errorMsg = error instanceof Error ? error.message : 'Payment failed';
+
+              // Update payment record with failure
+              paymentRecord.status = 'failed';
+              paymentRecord.error = errorMsg;
+
+              // Save failed payment record
+              await services.state.savePaymentRecord(paymentRecord)
+                .catch(err => console.error('[State] Failed to save payment record:', err));
+
               setPaymentResult(null, errorMsg);
-              // Update MongoDB with error
+
+              // Update competition with error
               await services.state.updateCompetition(comp.id, {
                 status: 'completed',
                 winner: reviewResult.winnerId,
                 paymentError: errorMsg,
+                paymentRecord,
                 completedAt: Date.now(),
               }).catch(err => console.error('[State] Update failed:', err));
             }
@@ -245,20 +282,12 @@ Provide a complete code solution to fix this issue.`;
   );
 }
 
-// Calculate bounty based on issue labels
+// Calculate bounty based on issue labels (testnet amounts)
 function calculateBounty(issue: Issue): number {
-  const labels = issue.labels.map((l) => l.toLowerCase());
-
-  if (labels.includes('bounty-high') || labels.includes('high-priority')) {
-    return 50;
-  }
-  if (labels.includes('bounty-medium') || labels.includes('enhancement')) {
-    return 25;
-  }
-  if (labels.includes('bug')) {
-    return 15;
-  }
-  return 10;
+  // Random amount between $0.01 and $0.05 for testnet
+  const min = 0.01;
+  const max = 0.05;
+  return Math.round((min + Math.random() * (max - min)) * 100) / 100;
 }
 
 // Helper function for delays

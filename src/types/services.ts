@@ -26,6 +26,9 @@ export interface IStateStore {
   updateCompetition(id: string, updates: Partial<Competition>): Promise<void>;
   updateAgentStatus(competitionId: string, agentStatus: AgentStatus): Promise<void>;
   listCompetitions(): Promise<Competition[]>;
+  // Payment records
+  savePaymentRecord(record: PaymentRecord): Promise<void>;
+  getPaymentRecord(id: string): Promise<PaymentRecord | null>;
 }
 
 // Payment handling

@@ -1,8 +1,9 @@
 import type { IStateStore } from '../../types/services.js';
-import type { Competition, AgentStatus } from '../../types/index.js';
+import type { Competition, AgentStatus, PaymentRecord } from '../../types/index.js';
 
 export class MockStateStore implements IStateStore {
   private competitions: Map<string, Competition> = new Map();
+  private payments: Map<string, PaymentRecord> = new Map();
 
   async saveCompetition(competition: Competition): Promise<void> {
     console.log(`[MockState] Saving competition: ${competition.id}`);
@@ -57,8 +58,20 @@ export class MockStateStore implements IStateStore {
     return Array.from(this.competitions.values()).map((c) => ({ ...c }));
   }
 
+  async savePaymentRecord(record: PaymentRecord): Promise<void> {
+    console.log(`[MockState] Saving payment record: ${record.id}`);
+    this.payments.set(record.id, { ...record });
+  }
+
+  async getPaymentRecord(id: string): Promise<PaymentRecord | null> {
+    console.log(`[MockState] Getting payment record: ${id}`);
+    const record = this.payments.get(id);
+    return record ? { ...record } : null;
+  }
+
   // Helper for testing - clears all data
   clear(): void {
     this.competitions.clear();
+    this.payments.clear();
   }
 }
