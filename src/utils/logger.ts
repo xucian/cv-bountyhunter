@@ -9,19 +9,8 @@ if (!fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
-// Open file handle for appending
-let logStream: fs.WriteStream | null = null;
-
-function getLogStream(): fs.WriteStream {
-  if (!logStream) {
-    logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
-    // Handle stream errors to prevent silent failures
-    logStream.on('error', (err) => {
-      process.stderr.write(`[Logger] Stream error: ${err.message}\n`);
-    });
-  }
-  return logStream;
-}
+// Note: We use synchronous file writes (appendFileSync) for reliability
+// This ensures all logs are written even if the process crashes
 
 function formatTimestamp(): string {
   return new Date().toISOString();
@@ -39,12 +28,13 @@ function writeToFile(level: string, message: string, ...args: any[]): void {
     : message;
 
   const line = `[${formatTimestamp()}] [${level}] ${formatted}\n`;
-  const stream = getLogStream();
-  stream.write(line);
-  // Ensure critical logs are flushed immediately
-  if (level === 'ERROR' || level === 'WARN') {
-    stream.cork();
-    process.nextTick(() => stream.uncork());
+
+  // Use synchronous write to ensure logs are written immediately
+  // This is more reliable for debugging than async streams
+  try {
+    fs.appendFileSync(LOG_FILE, line);
+  } catch (err) {
+    process.stderr.write(`[Logger] Write error: ${err}\n`);
   }
 }
 
@@ -98,24 +88,12 @@ export function enableFileLogging(): void {
 }
 
 export function flushLogger(): Promise<void> {
-  return new Promise((resolve) => {
-    if (logStream) {
-      logStream.once('drain', resolve);
-      // If nothing is buffered, drain won't fire, so resolve immediately
-      if (!logStream.writableNeedDrain) {
-        resolve();
-      }
-    } else {
-      resolve();
-    }
-  });
+  // With synchronous writes, there's nothing to flush
+  return Promise.resolve();
 }
 
 export function closeLogger(): void {
-  if (logStream) {
-    logStream.end();
-    logStream = null;
-  }
+  // With synchronous writes, there's nothing to close
 }
 
 /**

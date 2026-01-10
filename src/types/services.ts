@@ -1,4 +1,5 @@
 import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus } from './index.js';
+import type { CompetitionEvent } from './events.js';
 
 // GitHub operations
 export interface IGitHubService {
@@ -97,6 +98,20 @@ export interface CodeChunk {
   score?: number; // Relevance score from vector search
 }
 
+// Event emitter for real-time updates
+export interface IEventEmitter {
+  /**
+   * Emit an event to all subscribers
+   */
+  emit(event: CompetitionEvent): Promise<void>;
+
+  /**
+   * Subscribe to events
+   * Returns unsubscribe function
+   */
+  subscribe(handler: (event: CompetitionEvent) => void): () => void;
+}
+
 // All services bundled
 export interface Services {
   github: IGitHubService;
@@ -106,4 +121,5 @@ export interface Services {
   agentClient: IAgentClient;
   reviewer: IReviewerService;
   rag: IRAGService;
+  events: IEventEmitter;
 }

@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "tui": "tsx src/tui/index.tsx",
+    "ws": "tsx src/ws-server.ts",
+    "web": "cd web && bun run dev",
+    "web:build": "cd web && bun run build",
     "dev:tui": "tsx src/tui/index.tsx",
     "dev:agents": "tsx src/launch-agents.ts",
     "build": "tsc",
@@ -34,12 +38,14 @@
     "nanoid": "^5.0.4",
     "react": "^18.2.0",
     "viem": "^2.44.1",
-    "voyageai": "^0.1.0"
+    "voyageai": "^0.1.0",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }

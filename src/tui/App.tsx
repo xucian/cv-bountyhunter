@@ -10,6 +10,7 @@ import { useCompetition } from './hooks/useCompetition.js';
 import { createServices } from '../services/index.js';
 import { config } from '../config.js';
 import type { Competition, Issue, Solution, PaymentRecord } from '../types/index.js';
+import type { CompetitionEvent } from '../types/events.js';
 
 type ViewState = 'menu' | 'competition' | 'results' | 'history' | 'leaderboard';
 

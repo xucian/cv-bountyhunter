@@ -9,6 +9,7 @@ import { MockPaymentService } from './payment/mock.js';
 import { MockAgentClient } from './agent-client/mock.js';
 import { MockReviewerService } from './reviewer/mock.js';
 import { MockRAGService } from './rag/mock.js';
+import { MockEventEmitter } from './events/mock.js';
 
 // Real implementations
 import { RealGitHubService } from './github/real.js';
@@ -63,6 +64,10 @@ export function createServices(): Services {
     ? new MockRAGService()
     : new RealRAGService();
 
+  // Events service - always use singleton for in-memory (shared across TUI/API)
+  // For production Redis pub/sub, this can be configured separately
+  const events = MockEventEmitter.getInstance();
+
   console.log('[Services] Initialized with:');
   console.log(`  - GitHub: ${useMocks.github ? 'MOCK' : 'REAL'}`);
   console.log(`  - LLM: ${useMocks.llm ? 'MOCK' : 'REAL'}`);
@@ -71,6 +76,7 @@ export function createServices(): Services {
   console.log(`  - Agents: ${useMocks.agents ? 'MOCK' : 'REAL'}`);
   console.log(`  - Reviewer: ${useMocks.reviewer ? 'MOCK' : 'REAL'}`);
   console.log(`  - RAG: ${useMocks.rag ? 'MOCK' : 'REAL'}`);
+  console.log(`  - Events: IN-MEMORY`);
 
   return {
     github,
@@ -80,6 +86,7 @@ export function createServices(): Services {
     agentClient,
     reviewer,
     rag,
+    events,
   };
 }
 
@@ -94,3 +101,4 @@ export { MockPaymentService } from './payment/mock.js';
 export { MockAgentClient } from './agent-client/mock.js';
 export { MockReviewerService } from './reviewer/mock.js';
 export { MockRAGService } from './rag/mock.js';
+export { MockEventEmitter } from './events/mock.js';
