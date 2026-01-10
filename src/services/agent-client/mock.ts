@@ -1,9 +1,47 @@
 import type { IAgentClient } from '../../types/services.js';
-import type { Solution, SolveTask } from '../../types/index.js';
+import type { Solution, SolveTask, Issue, TaskEvaluation } from '../../types/index.js';
+import { config } from '../../config.js';
 
 export class MockAgentClient implements IAgentClient {
   // 80% success rate
   private readonly successRate = 0.8;
+
+  async evaluateAgent(
+    agentUrl: string,
+    issue: Issue,
+    bountyAmount: number
+  ): Promise<TaskEvaluation & { agentId: string }> {
+    // Extract agent ID from URL (e.g., http://localhost:3001 -> find agent on port 3001)
+    const port = parseInt(agentUrl.split(':').pop()?.split('/')[0] || '0');
+    const agentConfig = config.agents.find(a => a.port === port);
+
+    if (!agentConfig) {
+      return {
+        agentId: 'unknown',
+        accept: false,
+        minPrice: 0,
+        estimatedCost: 0,
+        reason: `Unknown agent at ${agentUrl}`,
+      };
+    }
+
+    const estimatedCost = agentConfig.avgTokensPerSolution * agentConfig.costPerToken;
+    const minPrice = estimatedCost * (1 + agentConfig.minimumMargin);
+    const accept = bountyAmount >= minPrice;
+    const marginIfAccepted = ((bountyAmount - estimatedCost) / estimatedCost) * 100;
+
+    console.log(`[MockAgentClient] ${agentConfig.id} evaluating: bounty=$${bountyAmount}, cost=$${estimatedCost.toFixed(4)}, minPrice=$${minPrice.toFixed(4)}`);
+
+    return {
+      agentId: agentConfig.id,
+      accept,
+      minPrice,
+      estimatedCost,
+      reason: accept
+        ? `Accepting: $${bountyAmount.toFixed(4)} bounty, $${estimatedCost.toFixed(4)} cost, ${marginIfAccepted.toFixed(0)}% margin`
+        : `Declining: Need $${minPrice.toFixed(4)} min, offered $${bountyAmount.toFixed(4)}`,
+    };
+  }
 
   async callAgent(agentUrl: string, task: SolveTask): Promise<Solution> {
     const startTime = Date.now();

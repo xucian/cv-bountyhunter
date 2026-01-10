@@ -1,8 +1,14 @@
 import { nanoid } from 'nanoid';
 import type { Services } from '../types/services.js';
-import type { Competition, Issue, AgentStatus, SolveTask, Solution, PaymentRecord } from '../types/index.js';
+import type { Competition, Issue, AgentStatus, SolveTask, Solution, PaymentRecord, TaskEvaluation } from '../types/index.js';
 import type { CodeChunk } from '../types/services.js';
 import { config } from '../config.js';
+
+interface AgentBid {
+  agentId: string;
+  evaluation: TaskEvaluation & { agentId: string };
+  accepted: boolean;
+}
 
 export class Orchestrator {
   constructor(private services: Services) {}
@@ -41,12 +47,51 @@ export class Orchestrator {
     // 5. Save competition to state store
     await this.services.state.saveCompetition(competition);
 
-    // 6. Update status to running and execute agents
+    // 6. Collect bids from agents - they decide if bounty is acceptable
+    console.log(`[Orchestrator] Requesting bids from agents for $${competition.bountyAmount} bounty...`);
+    const bids = await this.collectAgentBids(competition.issue, competition.bountyAmount);
+
+    const acceptingAgents = bids.filter(b => b.accepted);
+    const decliningAgents = bids.filter(b => !b.accepted);
+
+    console.log(`[Orchestrator] ${acceptingAgents.length} agents accepted, ${decliningAgents.length} declined`);
+
+    for (const bid of bids) {
+      console.log(`[Orchestrator] ${bid.agentId}: ${bid.accepted ? 'ACCEPT' : 'DECLINE'} - ${bid.evaluation.reason}`);
+    }
+
+    // Store bid info on agent statuses
+    for (const agentStatus of competition.agents) {
+      const bid = bids.find(b => b.agentId === agentStatus.id);
+      if (bid) {
+        agentStatus.evaluation = bid.evaluation;
+        if (!bid.accepted) {
+          agentStatus.status = 'declined';
+          agentStatus.declineReason = bid.evaluation.reason;
+        }
+      }
+    }
+    await this.services.state.updateCompetition(competition.id, { agents: competition.agents });
+
+    // If no agents accept, we could raise bounty - for now just proceed with whoever accepted
+    if (acceptingAgents.length === 0) {
+      console.log(`[Orchestrator] No agents accepted the bounty. Consider raising to $${Math.max(...bids.map(b => b.evaluation.minPrice)).toFixed(4)}`);
+      // Mark competition as completed with no participants
+      await this.services.state.updateCompetition(competition.id, {
+        status: 'completed',
+        completedAt: Date.now(),
+      });
+      competition.status = 'completed';
+      competition.completedAt = Date.now();
+      return competition;
+    }
+
+    // 7. Update status to running and execute agents (only those who accepted)
     await this.services.state.updateCompetition(competition.id, { status: 'running' });
     competition.status = 'running';
 
-    // 7. Run all agents in parallel (with code context)
-    await this.runAgents(competition, codeContext);
+    // 8. Run only accepting agents in parallel (with code context)
+    await this.runAgents(competition, codeContext, acceptingAgents.map(b => b.agentId));
 
     // 6. Review solutions and pick winner
     await this.services.state.updateCompetition(competition.id, { status: 'judging' });
@@ -78,10 +123,53 @@ export class Orchestrator {
   }
 
   /**
-   * Run all agents in parallel and update their statuses as they complete
+   * Collect bids from all agents - each agent evaluates if the bounty is acceptable
    */
-  private async runAgents(competition: Competition, codeContext?: string): Promise<void> {
-    const agentPromises = config.agents.map(async (agentConfig) => {
+  private async collectAgentBids(issue: Issue, bountyAmount: number): Promise<AgentBid[]> {
+    const bidPromises = config.agents.map(async (agentConfig) => {
+      const agentUrl = `http://localhost:${agentConfig.port}/solve`;
+
+      try {
+        const evaluation = await this.services.agentClient.evaluateAgent(
+          agentUrl,
+          issue,
+          bountyAmount
+        );
+
+        return {
+          agentId: agentConfig.id,
+          evaluation,
+          accepted: evaluation.accept,
+        };
+      } catch (error) {
+        console.error(`[Orchestrator] Failed to get bid from ${agentConfig.id}:`, error);
+        return {
+          agentId: agentConfig.id,
+          evaluation: {
+            agentId: agentConfig.id,
+            accept: false,
+            minPrice: 0,
+            estimatedCost: 0,
+            reason: `Failed to evaluate: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+          accepted: false,
+        };
+      }
+    });
+
+    return Promise.all(bidPromises);
+  }
+
+  /**
+   * Run agents in parallel and update their statuses as they complete
+   * @param acceptingAgentIds - Only run agents in this list (those who accepted the bounty)
+   */
+  private async runAgents(competition: Competition, codeContext?: string, acceptingAgentIds?: string[]): Promise<void> {
+    const agentsToRun = config.agents.filter(a =>
+      !acceptingAgentIds || acceptingAgentIds.includes(a.id)
+    );
+
+    const agentPromises = agentsToRun.map(async (agentConfig) => {
       const agentStatus = competition.agents.find((a) => a.id === agentConfig.id);
       if (!agentStatus) return;
 
@@ -307,25 +395,25 @@ export class Orchestrator {
 
   /**
    * Calculate bounty amount based on issue labels/complexity
-   * Default: 10 USDC, can be increased based on labels
+   * Default: $0.05 USDC, scales based on complexity
    */
   private calculateBounty(issue: Issue): number {
-    const baseBounty = 10;
+    const baseBounty = 0.05; // 5 cents base
 
     // Check for bounty-related labels
     const labels = issue.labels.map((l) => l.toLowerCase());
 
     if (labels.includes('bounty-high') || labels.includes('high-priority')) {
-      return 50;
+      return 0.15; // 15 cents - all agents can profit
     }
     if (labels.includes('bounty-medium') || labels.includes('enhancement')) {
-      return 25;
+      return 0.10; // 10 cents - DeepSeek will decline (needs $0.104)
     }
     if (labels.includes('bug')) {
-      return 15;
+      return 0.08; // 8 cents - Llama borderline, DeepSeek declines
     }
 
-    return baseBounty;
+    return baseBounty; // 5 cents - only Qwen accepts
   }
 
   /**

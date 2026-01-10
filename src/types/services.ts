@@ -1,4 +1,4 @@
-import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus } from './index.js';
+import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus, TaskEvaluation } from './index.js';
 import type { CompetitionEvent } from './events.js';
 
 // GitHub operations
@@ -51,6 +51,7 @@ export interface IPaymentService {
 
 // Agent communication
 export interface IAgentClient {
+  evaluateAgent(agentUrl: string, issue: Issue, bountyAmount: number): Promise<TaskEvaluation & { agentId: string }>;
   callAgent(agentUrl: string, task: SolveTask): Promise<Solution>;
 }
 

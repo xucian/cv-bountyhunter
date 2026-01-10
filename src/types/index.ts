@@ -21,13 +21,26 @@ export interface AgentConfig {
   model: string;
   port: number;
   walletAddress?: string;
+  // Economics
+  costPerToken: number;         // USD cost per token for this model
+  avgTokensPerSolution: number; // Estimated tokens to solve an issue
+  minimumMargin: number;        // Minimum profit margin (e.g., 0.3 = 30%)
+}
+
+export interface TaskEvaluation {
+  accept: boolean;
+  minPrice: number;
+  estimatedCost: number;
+  reason: string;
 }
 
 export interface AgentStatus {
   id: string;
   name: string;
-  status: 'idle' | 'solving' | 'done' | 'failed';
+  status: 'idle' | 'evaluating' | 'declined' | 'solving' | 'done' | 'failed';
   solution?: Solution;
+  evaluation?: TaskEvaluation;
+  declineReason?: string;
   startedAt?: number;
   completedAt?: number;
 }
