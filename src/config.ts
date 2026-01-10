@@ -8,6 +8,7 @@ export const config = {
     state: process.env.MOCK_STATE !== 'false',
     payment: process.env.MOCK_PAYMENT !== 'false',
     agents: process.env.MOCK_AGENTS !== 'false',
+    reviewer: process.env.MOCK_REVIEWER !== 'false',
   },
 
   agents: [

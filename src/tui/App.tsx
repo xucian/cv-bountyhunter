@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { nanoid } from 'nanoid';
 import { MainMenu } from './components/MainMenu.js';
 import { CompetitionView } from './components/CompetitionView.js';
 import { ResultsView } from './components/ResultsView.js';
 import { useCompetition } from './hooks/useCompetition.js';
+import { createServices } from '../services/index.js';
 import { config } from '../config.js';
 import type { Competition, Issue } from '../types/index.js';
 
@@ -14,17 +15,14 @@ export function App() {
   const [currentView, setCurrentView] = useState<ViewState>('menu');
   const { competition, setCompetition, updateAgent, setWinner, setStatus } = useCompetition();
 
-  // Handle starting a new competition
+  // Initialize services once
+  const services = useMemo(() => createServices(), []);
+
+  // Handle starting a new competition with an Issue
   const handleStartCompetition = useCallback(
-    async (repoUrl: string, issueNumber: number, bountyAmount: number) => {
-      // Create a mock issue for now (in production, this would fetch from GitHub)
-      const issue: Issue = {
-        number: issueNumber,
-        title: `Issue #${issueNumber} from ${repoUrl}`,
-        body: 'Issue description would be fetched from GitHub',
-        repoUrl,
-        labels: [],
-      };
+    async (issue: Issue) => {
+      // Calculate bounty from labels
+      const bountyAmount = calculateBounty(issue);
 
       // Initialize competition with all agents in idle state
       const newCompetition: Competition = {
@@ -133,7 +131,10 @@ export function App() {
   return (
     <Box flexDirection="column" minHeight={20}>
       {currentView === 'menu' && (
-        <MainMenu onStartCompetition={handleStartCompetition} />
+        <MainMenu
+          githubService={services.github}
+          onStartCompetition={handleStartCompetition}
+        />
       )}
 
       {currentView === 'competition' && competition && (
@@ -161,6 +162,22 @@ export function App() {
       </Box>
     </Box>
   );
+}
+
+// Calculate bounty based on issue labels
+function calculateBounty(issue: Issue): number {
+  const labels = issue.labels.map((l) => l.toLowerCase());
+
+  if (labels.includes('bounty-high') || labels.includes('high-priority')) {
+    return 50;
+  }
+  if (labels.includes('bounty-medium') || labels.includes('enhancement')) {
+    return 25;
+  }
+  if (labels.includes('bug')) {
+    return 15;
+  }
+  return 10;
 }
 
 // Helper function for delays

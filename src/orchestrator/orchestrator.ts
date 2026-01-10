@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import type { Services } from '../types/services.js';
-import type { Competition, Issue, AgentStatus, SolveTask } from '../types/index.js';
+import type { Competition, Issue, AgentStatus, SolveTask, Solution } from '../types/index.js';
 import { config } from '../config.js';
 
 export class Orchestrator {
@@ -34,14 +34,20 @@ export class Orchestrator {
     // 5. Run all agents in parallel
     await this.runAgents(competition);
 
-    // 6. Pick winner and pay them
+    // 6. Review solutions and pick winner
     await this.services.state.updateCompetition(competition.id, { status: 'judging' });
     competition.status = 'judging';
 
-    const winnerId = this.pickWinner(competition);
-    competition.winner = winnerId ?? undefined;
+    const reviewResult = await this.reviewAndPickWinner(competition);
+    competition.reviewResult = reviewResult;
+    competition.winner = reviewResult.winnerId ?? undefined;
 
-    if (winnerId) {
+    await this.services.state.updateCompetition(competition.id, {
+      reviewResult,
+      winner: reviewResult.winnerId ?? undefined,
+    });
+
+    if (reviewResult.winnerId) {
       await this.payWinner(competition);
     }
 
@@ -49,7 +55,6 @@ export class Orchestrator {
     const completedAt = Date.now();
     await this.services.state.updateCompetition(competition.id, {
       status: 'completed',
-      winner: winnerId ?? undefined,
       completedAt,
     });
     competition.status = 'completed';
@@ -104,26 +109,26 @@ export class Orchestrator {
   }
 
   /**
-   * Pick the winner - fastest successful solution
+   * Review all solutions and pick the winner using the reviewer service
    */
-  private pickWinner(competition: Competition): string | null {
-    // Filter to only successful agents with solutions
-    const successfulAgents = competition.agents.filter(
-      (agent) => agent.status === 'done' && agent.solution?.success
+  private async reviewAndPickWinner(competition: Competition) {
+    // Collect all solutions from agents
+    const solutions: Solution[] = competition.agents
+      .filter((agent) => agent.solution)
+      .map((agent) => agent.solution!);
+
+    console.log(`[Orchestrator] Reviewing ${solutions.length} solutions...`);
+
+    // Use the reviewer service to evaluate solutions
+    const reviewResult = await this.services.reviewer.reviewSolutions(
+      competition.issue,
+      solutions
     );
 
-    if (successfulAgents.length === 0) {
-      return null;
-    }
+    console.log(`[Orchestrator] Review complete. Winner: ${reviewResult.winnerId ?? 'none'}`);
+    console.log(`[Orchestrator] Summary: ${reviewResult.summary}`);
 
-    // Sort by solution time (fastest first)
-    successfulAgents.sort((a, b) => {
-      const timeA = a.solution?.timeMs ?? Infinity;
-      const timeB = b.solution?.timeMs ?? Infinity;
-      return timeA - timeB;
-    });
-
-    return successfulAgents[0].id;
+    return reviewResult;
   }
 
   /**

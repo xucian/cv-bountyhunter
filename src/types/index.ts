@@ -39,6 +39,7 @@ export interface Competition {
   status: 'pending' | 'running' | 'judging' | 'completed';
   agents: AgentStatus[];
   winner?: string;
+  reviewResult?: ReviewResult;
   createdAt: number;
   completedAt?: number;
 }
@@ -53,4 +54,20 @@ export interface PaymentRequest {
   paymentId: string;
   amount: number;
   status: 'pending' | 'completed' | 'failed';
+}
+
+export interface ReviewScore {
+  agentId: string;
+  score: number;        // 0-100
+  correctness: number;  // 0-100
+  codeQuality: number;  // 0-100
+  completeness: number; // 0-100
+  reasoning: string;
+}
+
+export interface ReviewResult {
+  winnerId: string | null;
+  scores: ReviewScore[];
+  summary: string;
+  reviewTimeMs: number;
 }

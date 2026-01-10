@@ -7,6 +7,7 @@ import { MockLLMService } from './llm/mock.js';
 import { MockStateStore } from './state/mock.js';
 import { MockPaymentService } from './payment/mock.js';
 import { MockAgentClient } from './agent-client/mock.js';
+import { MockReviewerService } from './reviewer/mock.js';
 
 // Real implementations
 import { RealGitHubService } from './github/real.js';
@@ -14,6 +15,7 @@ import { RealLLMService } from './llm/real.js';
 import { RealStateStore } from './state/real.js';
 import { RealPaymentService } from './payment/real.js';
 import { RealAgentClient } from './agent-client/real.js';
+import { RealReviewerService } from './reviewer/real.js';
 
 /**
  * Creates and returns all services based on config.useMocks flags.
@@ -24,6 +26,7 @@ import { RealAgentClient } from './agent-client/real.js';
  * - Set MOCK_STATE=false to use real state store (MongoDB)
  * - Set MOCK_PAYMENT=false to use real payment service (X402)
  * - Set MOCK_AGENTS=false to use real agent client
+ * - Set MOCK_REVIEWER=false to use real reviewer service
  *
  * By default, all services are mocked for development.
  */
@@ -50,12 +53,17 @@ export function createServices(): Services {
     ? new MockAgentClient()
     : new RealAgentClient();
 
+  const reviewer = useMocks.reviewer
+    ? new MockReviewerService()
+    : new RealReviewerService(config.fireworks.apiKey);
+
   console.log('[Services] Initialized with:');
   console.log(`  - GitHub: ${useMocks.github ? 'MOCK' : 'REAL'}`);
   console.log(`  - LLM: ${useMocks.llm ? 'MOCK' : 'REAL'}`);
   console.log(`  - State: ${useMocks.state ? 'MOCK' : 'REAL'}`);
   console.log(`  - Payment: ${useMocks.payment ? 'MOCK' : 'REAL'}`);
   console.log(`  - Agents: ${useMocks.agents ? 'MOCK' : 'REAL'}`);
+  console.log(`  - Reviewer: ${useMocks.reviewer ? 'MOCK' : 'REAL'}`);
 
   return {
     github,
@@ -63,6 +71,7 @@ export function createServices(): Services {
     state,
     payment,
     agentClient,
+    reviewer,
   };
 }
 
@@ -75,3 +84,4 @@ export { MockLLMService } from './llm/mock.js';
 export { MockStateStore } from './state/mock.js';
 export { MockPaymentService } from './payment/mock.js';
 export { MockAgentClient } from './agent-client/mock.js';
+export { MockReviewerService } from './reviewer/mock.js';

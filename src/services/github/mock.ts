@@ -2,20 +2,15 @@ import type { IGitHubService } from '../../types/services.js';
 import type { Issue } from '../../types/index.js';
 
 export class MockGitHubService implements IGitHubService {
-  async isAuthenticated(): Promise<boolean> {
-    console.log('[MockGitHub] Checking authentication...');
-    return true;
-  }
+  private recentRepos: string[] = [
+    'https://github.com/anthropics/claude-code',
+    'https://github.com/vercel/next.js',
+  ];
 
-  async getIssue(repoUrl: string, issueNumber: number): Promise<Issue> {
-    console.log(`[MockGitHub] Fetching issue #${issueNumber} from ${repoUrl}`);
-
-    // Simulate network delay
-    await this.delay(300);
-
-    return {
-      number: issueNumber,
-      title: `Fix authentication bug in login flow`,
+  private mockIssues: Issue[] = [
+    {
+      number: 1,
+      title: 'Fix authentication bug in login flow',
       body: `## Description
 The login flow fails when users enter special characters in their password.
 
@@ -29,14 +24,108 @@ The login flow fails when users enter special characters in their password.
 User should be logged in successfully.
 
 ## Actual Behavior
-Error message: "Invalid credentials" even with correct password.
+Error message: "Invalid credentials" even with correct password.`,
+      repoUrl: '',
+      labels: ['bug', 'priority:high'],
+    },
+    {
+      number: 2,
+      title: 'Add dark mode support',
+      body: `## Feature Request
+Users have requested dark mode support for the application.
 
-## Technical Details
-- The password sanitization function is stripping special characters
-- Located in src/auth/utils.ts`,
+## Requirements
+- Toggle in settings
+- Persist preference
+- System preference detection`,
+      repoUrl: '',
+      labels: ['enhancement', 'ui'],
+    },
+    {
+      number: 3,
+      title: 'Improve API response time',
+      body: `## Performance Issue
+The /api/users endpoint is slow when fetching large datasets.
+
+## Current: 2.5s average
+## Target: < 500ms`,
+      repoUrl: '',
+      labels: ['performance', 'api'],
+    },
+  ];
+
+  async isAuthenticated(): Promise<boolean> {
+    console.log('[MockGitHub] Checking authentication...');
+    return true;
+  }
+
+  async getCurrentRepo(): Promise<string | null> {
+    console.log('[MockGitHub] Detecting current repo...');
+    await this.delay(100);
+    // Simulate detecting current repo
+    return 'https://github.com/user/codebounty';
+  }
+
+  async getRecentRepos(): Promise<string[]> {
+    console.log('[MockGitHub] Getting recent repos...');
+    return this.recentRepos;
+  }
+
+  async addRecentRepo(repoUrl: string): Promise<void> {
+    console.log(`[MockGitHub] Adding to recent repos: ${repoUrl}`);
+    // Add to front, remove duplicates, keep max 10
+    this.recentRepos = [
       repoUrl,
-      labels: ['bug', 'priority:high', 'auth'],
+      ...this.recentRepos.filter(r => r !== repoUrl),
+    ].slice(0, 10);
+  }
+
+  async listIssues(repoUrl: string, limit = 10): Promise<Issue[]> {
+    console.log(`[MockGitHub] Listing issues for ${repoUrl} (limit: ${limit})`);
+    await this.delay(300);
+    return this.mockIssues.slice(0, limit).map(issue => ({
+      ...issue,
+      repoUrl,
+    }));
+  }
+
+  async getIssue(repoUrl: string, issueNumber: number): Promise<Issue> {
+    console.log(`[MockGitHub] Fetching issue #${issueNumber} from ${repoUrl}`);
+    await this.delay(200);
+
+    const issue = this.mockIssues.find(i => i.number === issueNumber);
+    if (issue) {
+      return { ...issue, repoUrl };
+    }
+
+    return {
+      number: issueNumber,
+      title: `Issue #${issueNumber}`,
+      body: 'Mock issue body',
+      repoUrl,
+      labels: ['bug'],
     };
+  }
+
+  async createIssue(
+    repoUrl: string,
+    title: string,
+    body: string,
+    labels: string[] = []
+  ): Promise<Issue> {
+    console.log(`[MockGitHub] Creating issue: "${title}"`);
+    await this.delay(400);
+
+    const newIssue: Issue = {
+      number: this.mockIssues.length + 1,
+      title,
+      body,
+      repoUrl,
+      labels,
+    };
+
+    this.mockIssues.push(newIssue);
+    return newIssue;
   }
 
   async createBranch(repo: string, branchName: string): Promise<void> {
@@ -51,9 +140,6 @@ Error message: "Invalid credentials" even with correct password.
     body: string
   ): Promise<string> {
     console.log(`[MockGitHub] Creating PR: "${title}"`);
-    console.log(`[MockGitHub] Branch: ${branch}`);
-    console.log(`[MockGitHub] Body preview: ${body.slice(0, 100)}...`);
-
     await this.delay(500);
 
     const prNumber = Math.floor(Math.random() * 1000) + 100;

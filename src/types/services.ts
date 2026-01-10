@@ -1,9 +1,14 @@
-import type { Issue, Solution, Competition, SolveTask, PaymentRequest } from './index.js';
+import type { Issue, Solution, Competition, SolveTask, PaymentRequest, ReviewResult } from './index.js';
 
 // GitHub operations
 export interface IGitHubService {
   isAuthenticated(): Promise<boolean>;
+  getCurrentRepo(): Promise<string | null>;  // Detect from git remote
+  getRecentRepos(): Promise<string[]>;       // Local history
+  addRecentRepo(repoUrl: string): Promise<void>;
+  listIssues(repoUrl: string, limit?: number): Promise<Issue[]>;
   getIssue(repoUrl: string, issueNumber: number): Promise<Issue>;
+  createIssue(repoUrl: string, title: string, body: string, labels?: string[]): Promise<Issue>;
   createBranch(repo: string, branchName: string): Promise<void>;
   createPR(repo: string, branch: string, title: string, body: string): Promise<string>;
 }
@@ -33,6 +38,11 @@ export interface IAgentClient {
   callAgent(agentUrl: string, task: SolveTask): Promise<Solution>;
 }
 
+// Code review service
+export interface IReviewerService {
+  reviewSolutions(issue: Issue, solutions: Solution[]): Promise<ReviewResult>;
+}
+
 // All services bundled
 export interface Services {
   github: IGitHubService;
@@ -40,4 +50,5 @@ export interface Services {
   state: IStateStore;
   payment: IPaymentService;
   agentClient: IAgentClient;
+  reviewer: IReviewerService;
 }
