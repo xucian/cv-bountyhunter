@@ -80,21 +80,35 @@ export function enableFileLogging(): void {
 
   console.log = function(message?: any, ...args: any[]) {
     writeToFile('INFO', String(message ?? ''), ...args);
-    // Don't call original - Ink handles display
+    // Don't call original - would interfere with Ink TUI
   };
 
   console.error = function(message?: any, ...args: any[]) {
     writeToFile('ERROR', String(message ?? ''), ...args);
-    // Write errors to stderr so they're visible
-    writeStderr(`[ERROR] ${message} ${args.join(' ')}`);
+    // Don't write to stderr - would interfere with Ink TUI
+    // All errors are in the log file
   };
 
   console.warn = function(message?: any, ...args: any[]) {
     writeToFile('WARN', String(message ?? ''), ...args);
+    // Don't call original - would interfere with Ink TUI
   };
 
   // Log startup
   writeToFile('INFO', `[Logger] Started - logging to ${LOG_FILE}`);
+
+  // Catch uncaught exceptions and unhandled rejections
+  process.on('uncaughtException', (error) => {
+    writeToFile('ERROR', '[UNCAUGHT EXCEPTION]', error);
+    writeToFile('ERROR', 'Stack:', error.stack || 'No stack trace');
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    writeToFile('ERROR', '[UNHANDLED REJECTION]', reason);
+    if (reason instanceof Error) {
+      writeToFile('ERROR', 'Stack:', reason.stack || 'No stack trace');
+    }
+  });
 }
 
 export function flushLogger(): Promise<void> {

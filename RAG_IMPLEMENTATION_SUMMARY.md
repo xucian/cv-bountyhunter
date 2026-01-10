@@ -144,6 +144,21 @@ More semantic than line-based splitting:
 
 ## Usage
 
+### Logging
+
+All console output is automatically logged to `logs/codebounty-YYYY-MM-DD.log`. Watch logs in real-time:
+
+```bash
+# In a separate terminal
+tail -f logs/codebounty-*.log
+```
+
+You'll see:
+- `[Orchestrator]` - Competition flow
+- `[RealRAG]` - Indexing and querying
+- `[Reviewer]` - Solution evaluation
+- `[State]` - MongoDB operations
+
 ### Mock Mode (Default)
 ```bash
 # .env
@@ -151,6 +166,9 @@ MOCK_RAG=true
 
 # Run competition
 npm run dev:tui
+
+# In another terminal
+tail -f logs/codebounty-*.log
 ```
 
 ### Real Mode
@@ -160,10 +178,30 @@ MOCK_RAG=false
 VOYAGE_API_KEY=pa-xxx...
 MONGODB_URI=mongodb+srv://...
 
-# Ensure MongoDB vector index exists (see plan)
+# Ensure MongoDB vector index exists (see below)
 
 # Run competition
 npm run dev:tui
+
+# Watch logs in another terminal
+tail -f logs/codebounty-*.log
+```
+
+**Expected Real Mode Logs:**
+```
+[Orchestrator] Indexing repository at /Users/luti/dev/cv-xcoin-hunter
+[RealRAG] Connected to MongoDB Atlas
+[RealRAG] Indexing https://github.com/... (commit: abc123...)
+[RealRAG] Found 43 source files
+[RealRAG] Extracted 212 code chunks
+[RealRAG] Embedding batch 1/2...
+[RealRAG] Embedding batch 2/2...
+[RealRAG] ✓ Indexed 212 chunks to MongoDB Atlas
+[Orchestrator] Repository indexed: 212 chunks (commit: abc123...)
+[Orchestrator] Querying relevant code for issue...
+[RealRAG] Querying for issue: Fix authentication bug...
+[RealRAG] Found 10 relevant chunks
+[Orchestrator] Retrieved 10 relevant code chunks
 ```
 
 ## MongoDB Atlas Setup Required
@@ -224,10 +262,22 @@ M  src/config.ts             # Added RAG, Voyage, MongoDB config
 M  src/types/services.ts     # Added IRAGService and CodeChunk
 M  src/services/index.ts     # Added RAG service factory
 M  src/orchestrator/orchestrator.ts  # Integrated RAG indexing and querying
+M  src/tui/App.tsx           # Refactored to use Orchestrator (enables RAG!)
 A  src/services/rag/mock.ts  # Mock implementation
 A  src/services/rag/real.ts  # Real implementation
 A  scripts/test-rag.ts       # Test script
 ```
+
+## Critical Fix: TUI Now Uses Orchestrator
+
+**Previous Issue**: The TUI was manually orchestrating competitions and calling services directly, which completely bypassed the Orchestrator where RAG integration lives.
+
+**Fix Applied**: Refactored `src/tui/App.tsx` to:
+1. Call `orchestrator.startCompetition()` instead of manual flow
+2. Poll MongoDB for real-time competition updates
+3. Remove 200+ lines of duplicate orchestration logic
+
+**Result**: RAG now actually runs when you start a competition in the TUI!
 
 ## Integration Quality
 
