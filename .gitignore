@@ -44,3 +44,6 @@ coverage/
 .cache/
 tmp/
 temp/
+
+# Temporary env notes (contains secrets)
+todos/tmp-env.md
