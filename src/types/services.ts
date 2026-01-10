@@ -58,6 +58,45 @@ export interface IReviewerService {
   reviewSolutions(issue: Issue, solutions: Solution[]): Promise<ReviewResult>;
 }
 
+// RAG (Retrieval-Augmented Generation) service for code indexing and search
+export interface IRAGService {
+  /**
+   * Index a local repository into MongoDB Atlas
+   * @param repoPath - Local filesystem path to repo (e.g., "/Users/me/project")
+   * @param repoUrl - GitHub URL (e.g., "https://github.com/owner/repo")
+   * @returns Commit ID and number of chunks indexed
+   */
+  indexRepo(repoPath: string, repoUrl: string): Promise<{
+    commitId: string;
+    chunksIndexed: number;
+  }>;
+
+  /**
+   * Query relevant code chunks for an issue
+   * @param issue - The GitHub issue to find relevant code for
+   * @param limit - Max number of chunks to return (default: 10)
+   * @returns Array of relevant code chunks, sorted by relevance score
+   */
+  queryRelevantCode(issue: Issue, limit?: number): Promise<CodeChunk[]>;
+
+  /**
+   * Check if a repo is already indexed
+   * @param repoUrl - GitHub URL
+   * @param commitId - Git commit SHA
+   * @returns True if already indexed
+   */
+  isRepoIndexed(repoUrl: string, commitId: string): Promise<boolean>;
+}
+
+// Code chunk representation for RAG
+export interface CodeChunk {
+  filePath: string;
+  chunkType: 'function' | 'class' | 'method';
+  chunkName: string;
+  code: string;
+  score?: number; // Relevance score from vector search
+}
+
 // All services bundled
 export interface Services {
   github: IGitHubService;
@@ -66,4 +105,5 @@ export interface Services {
   payment: IPaymentService;
   agentClient: IAgentClient;
   reviewer: IReviewerService;
+  rag: IRAGService;
 }

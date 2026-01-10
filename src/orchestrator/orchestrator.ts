@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import type { Services } from '../types/services.js';
 import type { Competition, Issue, AgentStatus, SolveTask, Solution, PaymentRecord } from '../types/index.js';
+import type { CodeChunk } from '../types/services.js';
 import { config } from '../config.js';
 
 export class Orchestrator {
@@ -8,13 +9,26 @@ export class Orchestrator {
 
   /**
    * Start a new competition for a GitHub issue
-   * Fetches issue, creates competition, runs agents, picks winner, pays them
+   * Fetches issue, indexes repo, creates competition, runs agents, picks winner, pays them
    */
   async startCompetition(repoUrl: string, issueNumber: number): Promise<Competition> {
     // 1. Fetch issue from GitHub
     const issue = await this.services.github.getIssue(repoUrl, issueNumber);
 
-    // 2. Create initial competition state
+    // 2. Index repository FIRST (fail fast pattern - if indexing fails, no competition is created)
+    const currentDir = process.cwd();
+    console.log(`[Orchestrator] Indexing repository at ${currentDir}`);
+
+    const { commitId, chunksIndexed } = await this.services.rag.indexRepo(currentDir, repoUrl);
+    console.log(`[Orchestrator] Repository indexed: ${chunksIndexed} chunks (commit: ${commitId})`);
+
+    // 3. Query relevant code context
+    console.log(`[Orchestrator] Querying relevant code for issue...`);
+    const relevantChunks = await this.services.rag.queryRelevantCode(issue, config.rag.chunkLimit);
+    const codeContext = this.formatCodeContext(relevantChunks);
+    console.log(`[Orchestrator] Retrieved ${relevantChunks.length} relevant code chunks`);
+
+    // 4. Create initial competition state (only after successful indexing)
     const competition: Competition = {
       id: nanoid(),
       issue,
@@ -24,15 +38,15 @@ export class Orchestrator {
       createdAt: Date.now(),
     };
 
-    // 3. Save competition to state store
+    // 5. Save competition to state store
     await this.services.state.saveCompetition(competition);
 
-    // 4. Update status to running and execute agents
+    // 6. Update status to running and execute agents
     await this.services.state.updateCompetition(competition.id, { status: 'running' });
     competition.status = 'running';
 
-    // 5. Run all agents in parallel
-    await this.runAgents(competition);
+    // 7. Run all agents in parallel (with code context)
+    await this.runAgents(competition, codeContext);
 
     // 6. Review solutions and pick winner
     await this.services.state.updateCompetition(competition.id, { status: 'judging' });
@@ -66,7 +80,7 @@ export class Orchestrator {
   /**
    * Run all agents in parallel and update their statuses as they complete
    */
-  private async runAgents(competition: Competition): Promise<void> {
+  private async runAgents(competition: Competition, codeContext?: string): Promise<void> {
     const agentPromises = config.agents.map(async (agentConfig) => {
       const agentStatus = competition.agents.find((a) => a.id === agentConfig.id);
       if (!agentStatus) return;
@@ -80,10 +94,11 @@ export class Orchestrator {
         // Build the agent URL
         const agentUrl = `http://localhost:${agentConfig.port}/solve`;
 
-        // Create the solve task
+        // Create the solve task with code context
         const task: SolveTask = {
           agentId: agentConfig.id,
           issue: competition.issue,
+          codeContext, // Include RAG-retrieved context
         };
 
         // Call the agent
@@ -311,5 +326,35 @@ export class Orchestrator {
     }
 
     return baseBounty;
+  }
+
+  /**
+   * Format code chunks into context string for agents
+   */
+  private formatCodeContext(chunks: CodeChunk[]): string {
+    if (chunks.length === 0) {
+      return 'No relevant code context found.';
+    }
+
+    let context = '# Relevant Code Context\n\n';
+    context += `Found ${chunks.length} relevant code sections:\n\n`;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      context += `## ${i + 1}. ${chunk.chunkName} (${chunk.chunkType})\n`;
+      context += `**File**: ${chunk.filePath}\n`;
+      if (chunk.score) {
+        context += `**Relevance**: ${(chunk.score * 100).toFixed(1)}%\n`;
+      }
+      context += `\`\`\`typescript\n${chunk.code}\n\`\`\`\n\n`;
+    }
+
+    // Safety: Truncate if context is too large
+    const MAX_CONTEXT_CHARS = 50000;
+    if (context.length > MAX_CONTEXT_CHARS) {
+      context = context.slice(0, MAX_CONTEXT_CHARS) + '\n\n... (truncated for size)';
+    }
+
+    return context;
   }
 }

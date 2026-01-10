@@ -8,6 +8,7 @@ import { MockStateStore } from './state/mock.js';
 import { MockPaymentService } from './payment/mock.js';
 import { MockAgentClient } from './agent-client/mock.js';
 import { MockReviewerService } from './reviewer/mock.js';
+import { MockRAGService } from './rag/mock.js';
 
 // Real implementations
 import { RealGitHubService } from './github/real.js';
@@ -16,6 +17,7 @@ import { RealStateStore } from './state/real.js';
 import { RealPaymentService } from './payment/real.js';
 import { RealAgentClient } from './agent-client/real.js';
 import { RealReviewerService } from './reviewer/real.js';
+import { RealRAGService } from './rag/real.js';
 
 /**
  * Creates and returns all services based on config.useMocks flags.
@@ -57,6 +59,10 @@ export function createServices(): Services {
     ? new MockReviewerService()
     : new RealReviewerService();
 
+  const rag = useMocks.rag
+    ? new MockRAGService()
+    : new RealRAGService();
+
   console.log('[Services] Initialized with:');
   console.log(`  - GitHub: ${useMocks.github ? 'MOCK' : 'REAL'}`);
   console.log(`  - LLM: ${useMocks.llm ? 'MOCK' : 'REAL'}`);
@@ -64,6 +70,7 @@ export function createServices(): Services {
   console.log(`  - Payment: ${useMocks.payment ? 'MOCK' : 'REAL'}`);
   console.log(`  - Agents: ${useMocks.agents ? 'MOCK' : 'REAL'}`);
   console.log(`  - Reviewer: ${useMocks.reviewer ? 'MOCK' : 'REAL'}`);
+  console.log(`  - RAG: ${useMocks.rag ? 'MOCK' : 'REAL'}`);
 
   return {
     github,
@@ -72,6 +79,7 @@ export function createServices(): Services {
     payment,
     agentClient,
     reviewer,
+    rag,
   };
 }
 
@@ -85,3 +93,4 @@ export { MockStateStore } from './state/mock.js';
 export { MockPaymentService } from './payment/mock.js';
 export { MockAgentClient } from './agent-client/mock.js';
 export { MockReviewerService } from './reviewer/mock.js';
+export { MockRAGService } from './rag/mock.js';

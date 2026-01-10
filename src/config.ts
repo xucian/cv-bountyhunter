@@ -9,6 +9,7 @@ export const config = {
     payment: process.env.MOCK_PAYMENT !== 'false',
     agents: process.env.MOCK_AGENTS !== 'false',
     reviewer: process.env.MOCK_REVIEWER !== 'false',
+    rag: process.env.MOCK_RAG !== 'false',
   },
 
   agents: [
@@ -35,10 +36,6 @@ export const config = {
     },
   ] as AgentConfig[],
 
-  mongodb: {
-    uri: process.env.MONGODB_URI || '',
-  },
-
   fireworks: {
     apiKey: process.env.FIREWORKS_API_KEY || '',
   },
@@ -61,5 +58,29 @@ export const config = {
     apiKeyId: process.env.CDP_API_KEY_ID || '',
     apiKeySecret: process.env.CDP_API_KEY_SECRET || '',
     walletSecret: process.env.CDP_WALLET_SECRET || '',
+  },
+
+  // RAG (Retrieval-Augmented Generation) Configuration
+  rag: {
+    indexMode: process.env.INDEX_MODE || 'ast',
+    chunkLimit: parseInt(process.env.RAG_CHUNK_LIMIT || '10', 10),
+  },
+
+  // Voyage AI Configuration
+  voyage: {
+    apiKey: process.env.VOYAGE_API_KEY || '',
+    model: 'voyage-code-2',
+    dimension: 1536,
+  },
+
+  // MongoDB Atlas Configuration
+  mongodb: {
+    uri: process.env.MONGODB_URI || '',
+    dbName: 'codebounty',
+    collections: {
+      chunks: 'code_chunks',
+      competitions: 'competitions',
+      payments: 'payments',
+    },
   },
 };
