@@ -172,7 +172,7 @@ export function ResultsView({ competition, githubService, onNewCompetition }: Re
       <Box
         flexDirection="column"
         borderStyle="single"
-        borderColor="cyan"
+        borderColor={competition.paymentError ? 'red' : 'cyan'}
         paddingX={2}
         paddingY={1}
         marginY={1}
@@ -192,8 +192,20 @@ export function ResultsView({ competition, githubService, onNewCompetition }: Re
         </Box>
         <Box>
           <Text dimColor>Status: </Text>
-          <Text color="green">Paid via X402 Protocol</Text>
+          {competition.paymentTxHash ? (
+            <Text color="green">Paid via X402</Text>
+          ) : competition.paymentError ? (
+            <Text color="red">{competition.paymentError}</Text>
+          ) : (
+            <Text color="yellow">Pending</Text>
+          )}
         </Box>
+        {competition.paymentTxHash && (
+          <Box>
+            <Text dimColor>Tx: </Text>
+            <Text color="cyan">{competition.paymentTxHash.slice(0, 20)}...</Text>
+          </Box>
+        )}
       </Box>
 
       {/* PR Status */}

@@ -13,7 +13,7 @@ type ViewState = 'menu' | 'competition' | 'results';
 
 export function App() {
   const [currentView, setCurrentView] = useState<ViewState>('menu');
-  const { competition, setCompetition, updateAgent, setWinner, setStatus } = useCompetition();
+  const { competition, setCompetition, updateAgent, setWinner, setStatus, setPaymentResult } = useCompetition();
 
   // Initialize services once
   const services = useMemo(() => createServices(), []);
@@ -41,10 +41,17 @@ export function App() {
       setCompetition(newCompetition);
       setCurrentView('competition');
 
+      // Save to MongoDB
+      try {
+        await services.state.saveCompetition(newCompetition);
+      } catch (err) {
+        console.error('[State] Failed to save competition:', err);
+      }
+
       // Run the competition
       runCompetition(newCompetition);
     },
-    [setCompetition]
+    [setCompetition, services]
   );
 
   // Run the actual competition using services
@@ -122,16 +129,67 @@ Provide a complete code solution to fix this issue.`;
         await delay(500);
 
         if (reviewResult.winnerId) {
+          // Set winner first
           setWinner(reviewResult.winnerId);
+
+          // Now process payment
+          setStatus('paying');
+          await delay(300);
+
+          // Find winner's wallet address
+          const winnerConfig = config.agents.find((a) => a.id === reviewResult.winnerId);
+          const walletAddress = winnerConfig?.walletAddress;
+
+          if (walletAddress) {
+            try {
+              const txHash = await services.payment.sendBonus(walletAddress, comp.bountyAmount);
+              setPaymentResult(txHash);
+              // Update MongoDB with final state
+              await services.state.updateCompetition(comp.id, {
+                status: 'completed',
+                winner: reviewResult.winnerId,
+                paymentTxHash: txHash,
+                completedAt: Date.now(),
+              }).catch(err => console.error('[State] Update failed:', err));
+            } catch (error) {
+              console.error('Payment failed:', error);
+              const errorMsg = error instanceof Error ? error.message : 'Payment failed';
+              setPaymentResult(null, errorMsg);
+              // Update MongoDB with error
+              await services.state.updateCompetition(comp.id, {
+                status: 'completed',
+                winner: reviewResult.winnerId,
+                paymentError: errorMsg,
+                completedAt: Date.now(),
+              }).catch(err => console.error('[State] Update failed:', err));
+            }
+          } else {
+            // No wallet configured, still complete
+            setPaymentResult(null, 'No wallet address configured');
+            await services.state.updateCompetition(comp.id, {
+              status: 'completed',
+              winner: reviewResult.winnerId,
+              paymentError: 'No wallet address configured',
+              completedAt: Date.now(),
+            }).catch(err => console.error('[State] Update failed:', err));
+          }
         } else {
           setStatus('completed');
+          await services.state.updateCompetition(comp.id, {
+            status: 'completed',
+            completedAt: Date.now(),
+          }).catch(err => console.error('[State] Update failed:', err));
         }
       } else {
         await delay(500);
         setStatus('completed');
+        await services.state.updateCompetition(comp.id, {
+          status: 'completed',
+          completedAt: Date.now(),
+        }).catch(err => console.error('[State] Update failed:', err));
       }
     },
-    [services, updateAgent, setStatus, setWinner]
+    [services, updateAgent, setStatus, setWinner, setPaymentResult]
   );
 
   // Handle transitioning from competition to results

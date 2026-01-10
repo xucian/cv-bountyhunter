@@ -36,10 +36,12 @@ export interface Competition {
   id: string;
   issue: Issue;
   bountyAmount: number;
-  status: 'pending' | 'running' | 'judging' | 'completed';
+  status: 'pending' | 'running' | 'judging' | 'paying' | 'completed';
   agents: AgentStatus[];
   winner?: string;
   reviewResult?: ReviewResult;
+  paymentTxHash?: string;
+  paymentError?: string;
   createdAt: number;
   completedAt?: number;
 }

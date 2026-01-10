@@ -16,6 +16,8 @@ function getStatusDisplay(status: Competition['status']): { text: string; color:
       return { text: 'Agents Racing', color: 'yellow' };
     case 'judging':
       return { text: 'Reviewing Solutions', color: 'cyan' };
+    case 'paying':
+      return { text: 'Processing Payment', color: 'magenta' };
     case 'completed':
       return { text: 'Competition Complete', color: 'green' };
     default:
@@ -30,7 +32,7 @@ function truncateText(text: string, maxLength: number): string {
 
 export function CompetitionView({ competition }: CompetitionViewProps) {
   const statusDisplay = getStatusDisplay(competition.status);
-  const isRunning = competition.status === 'running' || competition.status === 'judging';
+  const isRunning = competition.status === 'running' || competition.status === 'judging' || competition.status === 'paying';
   const completedAgents = competition.agents.filter((a) => a.status === 'done' || a.status === 'failed').length;
   const totalAgents = competition.agents.length;
 
