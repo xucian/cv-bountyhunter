@@ -117,7 +117,7 @@ export class RealStateStore implements IStateStore {
     await this.ensureConnected();
     if (!this.competitions) throw new Error('Not connected');
 
-    console.log(`[MongoDB] Updating agent ${agentStatus.id} in competition: ${competitionId}`);
+    console.log(`[MongoDB] Updating agent ${agentStatus.id} to status '${agentStatus.status}' in competition: ${competitionId}`);
 
     // Atomic update of a single agent in the agents array
     const result = await this.competitions.updateOne(
@@ -126,8 +126,11 @@ export class RealStateStore implements IStateStore {
     );
 
     if (result.matchedCount === 0) {
+      console.error(`[MongoDB] Agent update failed - competition or agent not found: ${competitionId}/${agentStatus.id}`);
       throw new Error(`Competition or agent not found: ${competitionId}/${agentStatus.id}`);
     }
+
+    console.log(`[MongoDB] Agent ${agentStatus.id} updated successfully (matched: ${result.matchedCount}, modified: ${result.modifiedCount})`);
   }
 
   async listCompetitions(): Promise<Competition[]> {

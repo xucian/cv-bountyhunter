@@ -15,6 +15,10 @@ let logStream: fs.WriteStream | null = null;
 function getLogStream(): fs.WriteStream {
   if (!logStream) {
     logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
+    // Handle stream errors to prevent silent failures
+    logStream.on('error', (err) => {
+      process.stderr.write(`[Logger] Stream error: ${err.message}\n`);
+    });
   }
   return logStream;
 }
@@ -35,7 +39,13 @@ function writeToFile(level: string, message: string, ...args: any[]): void {
     : message;
 
   const line = `[${formatTimestamp()}] [${level}] ${formatted}\n`;
-  getLogStream().write(line);
+  const stream = getLogStream();
+  stream.write(line);
+  // Ensure critical logs are flushed immediately
+  if (level === 'ERROR' || level === 'WARN') {
+    stream.cork();
+    process.nextTick(() => stream.uncork());
+  }
 }
 
 // Store original console methods (write to stderr to avoid Ink conflicts)
@@ -87,10 +97,45 @@ export function enableFileLogging(): void {
   writeToFile('INFO', `[Logger] Started - logging to ${LOG_FILE}`);
 }
 
+export function flushLogger(): Promise<void> {
+  return new Promise((resolve) => {
+    if (logStream) {
+      logStream.once('drain', resolve);
+      // If nothing is buffered, drain won't fire, so resolve immediately
+      if (!logStream.writableNeedDrain) {
+        resolve();
+      }
+    } else {
+      resolve();
+    }
+  });
+}
+
 export function closeLogger(): void {
   if (logStream) {
     logStream.end();
     logStream = null;
+  }
+}
+
+/**
+ * Convenience function for structured logging
+ * Usage: log('info', 'Reviewer', 'Message here')
+ */
+export function log(level: 'info' | 'warn' | 'error' | 'debug', context: string, message: string): void {
+  const formatted = `[${context}] ${message}`;
+  switch (level) {
+    case 'error':
+      logger.error(formatted);
+      break;
+    case 'warn':
+      logger.warn(formatted);
+      break;
+    case 'debug':
+    case 'info':
+    default:
+      logger.info(formatted);
+      break;
   }
 }
 

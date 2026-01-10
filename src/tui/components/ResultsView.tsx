@@ -255,10 +255,81 @@ export function ResultsView({ competition, githubService, onNewCompetition }: Re
         </Box>
       )}
 
-      {/* Agent Leaderboard */}
+      {/* Review Scores */}
+      {competition.reviewResult && (
+        <Box flexDirection="column" marginY={1}>
+          <Text bold color="magenta">
+            Review Scores
+          </Text>
+          <Box
+            flexDirection="column"
+            borderStyle="single"
+            borderColor="magenta"
+            paddingX={2}
+            paddingY={1}
+            marginTop={1}
+          >
+            {/* Header */}
+            <Box marginBottom={1}>
+              <Box width={16}>
+                <Text bold>Agent</Text>
+              </Box>
+              <Box width={10}>
+                <Text bold color="cyan">Score</Text>
+              </Box>
+              <Box width={12}>
+                <Text bold color="green">Correct</Text>
+              </Box>
+              <Box width={12}>
+                <Text bold color="yellow">Quality</Text>
+              </Box>
+              <Box width={12}>
+                <Text bold color="blue">Complete</Text>
+              </Box>
+            </Box>
+            {/* Scores */}
+            {competition.reviewResult.scores
+              .sort((a, b) => b.score - a.score)
+              .map((score) => {
+                const isWinner = score.agentId === competition.winner;
+                const agent = competition.agents.find((a) => a.id === score.agentId);
+                return (
+                  <Box key={score.agentId}>
+                    <Box width={16}>
+                      <Text color={isWinner ? 'green' : 'white'} bold={isWinner}>
+                        {isWinner ? '* ' : '  '}{agent?.name || score.agentId}
+                      </Text>
+                    </Box>
+                    <Box width={10}>
+                      <Text color="cyan" bold>{score.score}</Text>
+                    </Box>
+                    <Box width={12}>
+                      <Text color="green">{score.correctness}</Text>
+                    </Box>
+                    <Box width={12}>
+                      <Text color="yellow">{score.codeQuality}</Text>
+                    </Box>
+                    <Box width={12}>
+                      <Text color="blue">{score.completeness}</Text>
+                    </Box>
+                  </Box>
+                );
+              })}
+            {/* Summary */}
+            <Box marginTop={1} flexDirection="column">
+              <Text dimColor italic>
+                {competition.reviewResult.summary.slice(0, 200)}
+                {competition.reviewResult.summary.length > 200 ? '...' : ''}
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {/* Agent Results */}
       <Box flexDirection="column" marginY={1}>
         <Text bold color="white">
-          Agent Leaderboard
+          Agent Results
         </Text>
         <Box
           flexDirection="column"
@@ -273,6 +344,7 @@ export function ResultsView({ competition, githubService, onNewCompetition }: Re
             const isWinner = agent.id === competition.winner;
             const time = agent.solution ? formatTime(agent.solution.timeMs) : 'N/A';
             const success = agent.solution?.success;
+            const score = competition.reviewResult?.scores.find((s) => s.agentId === agent.id);
 
             return (
               <Box key={agent.id} justifyContent="space-between" paddingY={0}>
@@ -283,6 +355,7 @@ export function ResultsView({ competition, githubService, onNewCompetition }: Re
                 </Box>
                 <Box gap={2}>
                   <Text dimColor>{time}</Text>
+                  {score && <Text color="cyan">Score: {score.score}</Text>}
                   <Text color={success ? 'green' : agent.status === 'failed' ? 'red' : 'yellow'}>
                     {success ? 'SUCCESS' : agent.status === 'failed' ? 'FAILED' : 'NO SOLUTION'}
                   </Text>

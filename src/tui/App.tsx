@@ -4,12 +4,14 @@ import { nanoid } from 'nanoid';
 import { MainMenu } from './components/MainMenu.js';
 import { CompetitionView } from './components/CompetitionView.js';
 import { ResultsView } from './components/ResultsView.js';
+import { HistoryView } from './components/HistoryView.js';
+import { Leaderboard } from './components/Leaderboard.js';
 import { useCompetition } from './hooks/useCompetition.js';
 import { createServices } from '../services/index.js';
 import { config } from '../config.js';
 import type { Competition, Issue, Solution, PaymentRecord } from '../types/index.js';
 
-type ViewState = 'menu' | 'competition' | 'results';
+type ViewState = 'menu' | 'competition' | 'results' | 'history' | 'leaderboard';
 
 export function App() {
   const [currentView, setCurrentView] = useState<ViewState>('menu');
@@ -60,13 +62,22 @@ export function App() {
       // Start competition
       await delay(300);
       setStatus('running');
+      // Persist status to MongoDB
+      await services.state.updateCompetition(comp.id, { status: 'running' })
+        .catch(err => console.error('[State] Failed to update competition status:', err));
 
-      // Start all agents
+      // Start all agents - update local state AND persist to MongoDB
+      const startedAt = Date.now();
       for (const agent of comp.agents) {
-        updateAgent(agent.id, {
-          status: 'solving',
-          startedAt: Date.now(),
-        });
+        const agentUpdate = {
+          ...agent,
+          status: 'solving' as const,
+          startedAt,
+        };
+        updateAgent(agent.id, agentUpdate);
+        // Persist to MongoDB (fire and forget for UI responsiveness)
+        services.state.updateAgentStatus(comp.id, agentUpdate)
+          .catch(err => console.error(`[State] Failed to update agent ${agent.id}:`, err));
       }
 
       // Run all agents in parallel using the LLM service
@@ -94,20 +105,38 @@ Provide a complete code solution to fix this issue.`;
             success: true,
           };
 
-          updateAgent(agentConfig.id, {
-            status: 'done',
-            completedAt: Date.now(),
+          const completedAt = Date.now();
+          const agentUpdate = {
+            id: agentConfig.id,
+            name: agentConfig.name,
+            status: 'done' as const,
+            completedAt,
             solution,
-          });
+            startedAt: startTime,
+          };
+          updateAgent(agentConfig.id, agentUpdate);
+
+          // Persist to MongoDB
+          await services.state.updateAgentStatus(comp.id, agentUpdate)
+            .catch(err => console.error(`[State] Failed to update agent ${agentConfig.id}:`, err));
 
           return solution;
         } catch (error) {
           console.error(`Agent ${agentConfig.id} failed:`, error);
 
-          updateAgent(agentConfig.id, {
-            status: 'failed',
-            completedAt: Date.now(),
-          });
+          const completedAt = Date.now();
+          const agentUpdate = {
+            id: agentConfig.id,
+            name: agentConfig.name,
+            status: 'failed' as const,
+            completedAt,
+            startedAt: startTime,
+          };
+          updateAgent(agentConfig.id, agentUpdate);
+
+          // Persist to MongoDB
+          await services.state.updateAgentStatus(comp.id, agentUpdate)
+            .catch(err => console.error(`[State] Failed to update agent ${agentConfig.id}:`, err));
 
           return null;
         }
@@ -119,6 +148,9 @@ Provide a complete code solution to fix this issue.`;
       // Judge phase
       await delay(300);
       setStatus('judging');
+      // Persist status to MongoDB
+      await services.state.updateCompetition(comp.id, { status: 'judging' })
+        .catch(err => console.error('[State] Failed to update competition status:', err));
 
       // Use reviewer service to pick winner
       const successfulSolutions = results.filter((r): r is Solution => r !== null && r.success);
@@ -245,12 +277,35 @@ Provide a complete code solution to fix this issue.`;
     setCurrentView('menu');
   }, [setCompetition]);
 
+  // Handle viewing history
+  const handleViewHistory = useCallback(() => {
+    setCurrentView('history');
+  }, []);
+
+  // Handle viewing leaderboard
+  const handleViewLeaderboard = useCallback(() => {
+    setCurrentView('leaderboard');
+  }, []);
+
+  // Handle going back to menu
+  const handleBackToMenu = useCallback(() => {
+    setCurrentView('menu');
+  }, []);
+
+  // Handle selecting a competition from history
+  const handleSelectHistoryCompetition = useCallback((comp: Competition) => {
+    setCompetition(comp);
+    setCurrentView('results');
+  }, [setCompetition]);
+
   return (
     <Box flexDirection="column" minHeight={20}>
       {currentView === 'menu' && (
         <MainMenu
           githubService={services.github}
           onStartCompetition={handleStartCompetition}
+          onViewHistory={handleViewHistory}
+          onViewLeaderboard={handleViewLeaderboard}
         />
       )}
 
@@ -263,6 +318,21 @@ Provide a complete code solution to fix this issue.`;
           competition={competition}
           githubService={services.github}
           onNewCompetition={handleNewCompetition}
+        />
+      )}
+
+      {currentView === 'history' && (
+        <HistoryView
+          stateService={services.state}
+          onBack={handleBackToMenu}
+          onSelectCompetition={handleSelectHistoryCompetition}
+        />
+      )}
+
+      {currentView === 'leaderboard' && (
+        <Leaderboard
+          stateService={services.state}
+          onBack={handleBackToMenu}
         />
       )}
 

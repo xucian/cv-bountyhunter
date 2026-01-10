@@ -1,11 +1,11 @@
 #!/usr/bin/env node
+// IMPORTANT: Enable file logging BEFORE any other imports to ensure all console.log calls are captured
+import { enableFileLogging } from '../utils/logger.js';
+enableFileLogging();
+
 import React from 'react';
 import { render } from 'ink';
 import { App } from './App.js';
-import { enableFileLogging } from '../utils/logger.js';
-
-// Enable file logging (logs to ./logs/codebounty-YYYY-MM-DD.log)
-enableFileLogging();
 
 // Render the TUI application
 const { waitUntilExit } = render(<App />);

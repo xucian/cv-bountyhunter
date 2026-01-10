@@ -1,10 +1,13 @@
 import type { IReviewerService } from '../../types/services.js';
 import type { Issue, Solution, ReviewResult, ReviewScore } from '../../types/index.js';
 import { config } from '../../config.js';
+import { log } from '../../utils/logger.js';
 
 /**
  * Real Reviewer Service using LLM for code review
  * Uses Fireworks AI to evaluate and compare solutions
+ *
+ * NOTE: Solutions are shuffled before presenting to LLM to avoid position bias
  */
 export class RealReviewerService implements IReviewerService {
   private apiKey: string;
@@ -13,7 +16,7 @@ export class RealReviewerService implements IReviewerService {
   constructor() {
     this.apiKey = config.fireworks.apiKey;
     if (!this.apiKey) {
-      console.warn('[RealReviewer] Warning: FIREWORKS_API_KEY not set');
+      log('warn', 'RealReviewer', 'Warning: FIREWORKS_API_KEY not set');
     }
   }
 
@@ -43,10 +46,14 @@ export class RealReviewerService implements IReviewerService {
       };
     }
 
-    console.log(`[Reviewer] Evaluating ${successfulSolutions.length} solutions...`);
+    log('info', 'Reviewer', `Evaluating ${successfulSolutions.length} solutions...`);
 
-    // Build the review prompt
-    const prompt = this.buildReviewPrompt(issue, successfulSolutions);
+    // IMPORTANT: Shuffle solutions to avoid LLM position bias
+    const shuffledSolutions = this.shuffleArray([...successfulSolutions]);
+    log('info', 'Reviewer', `Shuffled order: ${shuffledSolutions.map(s => s.agentId).join(', ')}`);
+
+    // Build the review prompt with shuffled solutions
+    const prompt = this.buildReviewPrompt(issue, shuffledSolutions);
 
     try {
       const response = await fetch('https://api.fireworks.ai/inference/v1/chat/completions', {
@@ -62,6 +69,8 @@ export class RealReviewerService implements IReviewerService {
               role: 'system',
               content: `You are an expert code reviewer. Evaluate solutions to GitHub issues and return your assessment in JSON format.
 
+IMPORTANT: Evaluate each solution OBJECTIVELY based on its merits. Do NOT let the order solutions are presented influence your judgment. The best solution wins regardless of position.
+
 You must respond with ONLY valid JSON in this exact format:
 {
   "scores": [
@@ -75,14 +84,16 @@ You must respond with ONLY valid JSON in this exact format:
     }
   ],
   "winnerId": "agent_id_of_winner",
-  "summary": "Brief overall summary of the review"
+  "summary": "Brief overall summary comparing the solutions"
 }
 
 Score each criterion from 0-100:
-- correctness: Does it fix the issue correctly?
-- codeQuality: Is the code clean, readable, following best practices?
-- completeness: Does it handle edge cases and provide a complete solution?
-- score: Weighted average (correctness 50%, codeQuality 30%, completeness 20%)`,
+- correctness: Does it fix the issue correctly? (50% weight)
+- codeQuality: Is the code clean, readable, following best practices? (30% weight)
+- completeness: Does it handle edge cases and provide a complete solution? (20% weight)
+- score: Weighted average of the above
+
+Use the EXACT agentId strings provided (e.g., "llama", "qwen", "deepseek"). The winnerId MUST match one of these exactly.`,
             },
             {
               role: 'user',
@@ -104,19 +115,32 @@ Score each criterion from 0-100:
       };
 
       const content = data.choices[0]?.message?.content || '';
-      console.log(`[Reviewer] Got response, parsing...`);
+      log('info', 'Reviewer', 'Got LLM response, parsing...');
+      log('debug', 'Reviewer', `Raw response: ${content.slice(0, 500)}...`);
 
       // Parse the JSON response
       const result = this.parseReviewResponse(content, solutions, startTime);
-      console.log(`[Reviewer] Winner: ${result.winnerId}`);
+      log('info', 'Reviewer', `Winner: ${result.winnerId}`);
+      log('info', 'Reviewer', `Scores: ${result.scores.map(s => `${s.agentId}=${s.score}`).join(', ')}`);
 
       return result;
 
     } catch (error) {
-      console.error('[Reviewer] LLM review failed:', error);
+      log('error', 'Reviewer', `LLM review failed: ${error}`);
       // Fallback to simple scoring based on solution time
       return this.fallbackReview(solutions, startTime);
     }
+  }
+
+  /**
+   * Fisher-Yates shuffle to randomize solution order
+   */
+  private shuffleArray<T>(array: T[]): T[] {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
   }
 
   private buildReviewPrompt(issue: Issue, solutions: Solution[]): string {
@@ -193,14 +217,14 @@ Please evaluate each solution and determine the winner. Return your assessment a
       };
 
     } catch (parseError) {
-      console.error('[Reviewer] Failed to parse response:', parseError);
-      console.error('[Reviewer] Raw content:', content.slice(0, 500));
+      log('error', 'Reviewer', `Failed to parse response: ${parseError}`);
+      log('error', 'Reviewer', `Raw content: ${content.slice(0, 500)}`);
       throw parseError;
     }
   }
 
   private fallbackReview(solutions: Solution[], startTime: number): ReviewResult {
-    console.log('[Reviewer] Using fallback scoring (fastest solution wins)');
+    log('warn', 'Reviewer', 'Using fallback scoring (fastest solution wins)');
 
     const successfulSolutions = solutions.filter(s => s.success);
     if (successfulSolutions.length === 0) {
