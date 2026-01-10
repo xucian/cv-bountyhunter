@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import type { Services } from '../types/services.js';
-import type { Competition, Issue, AgentStatus, SolveTask, Solution } from '../types/index.js';
+import type { Competition, Issue, AgentStatus, SolveTask, Solution, PaymentRecord } from '../types/index.js';
 import { config } from '../config.js';
 
 export class Orchestrator {
@@ -132,7 +132,7 @@ export class Orchestrator {
   }
 
   /**
-   * Pay the winner their bonus
+   * Pay the winner their bonus with full payment tracking
    */
   private async payWinner(competition: Competition): Promise<void> {
     if (!competition.winner) return;
@@ -140,20 +140,136 @@ export class Orchestrator {
     // Find the winning agent's wallet address
     const agentConfig = config.agents.find((a) => a.id === competition.winner);
     if (!agentConfig?.walletAddress) {
-      console.error(`No wallet address found for winner: ${competition.winner}`);
+      console.error(`[Orchestrator] No wallet address found for winner: ${competition.winner}`);
       return;
     }
 
+    // Create payment record
+    const paymentRecord: PaymentRecord = {
+      id: nanoid(),
+      competitionId: competition.id,
+      agentId: competition.winner,
+      walletAddress: agentConfig.walletAddress,
+      amount: competition.bountyAmount,
+      txHash: '',
+      status: 'pending',
+      network: config.x402.network,
+      createdAt: Date.now(),
+    };
+
     try {
+      // Check balance before sending (if supported)
+      if (this.services.payment.getBalance) {
+        const balance = await this.services.payment.getBalance();
+        console.log(`[Orchestrator] Current wallet balance: ${balance} USDC`);
+
+        if (balance < competition.bountyAmount) {
+          paymentRecord.status = 'failed';
+          paymentRecord.error = `Insufficient balance: ${balance} < ${competition.bountyAmount}`;
+          console.error(`[Orchestrator] ${paymentRecord.error}`);
+
+          // Save failed payment record
+          await this.savePaymentRecord(paymentRecord);
+          throw new Error(paymentRecord.error);
+        }
+      }
+
+      console.log(`[Orchestrator] Sending ${competition.bountyAmount} USDC to ${competition.winner}...`);
+
       // Send bonus payment to winner
       const txHash = await this.services.payment.sendBonus(
         agentConfig.walletAddress,
         competition.bountyAmount
       );
-      console.log(`Bonus payment sent to ${competition.winner}: ${txHash}`);
+
+      // Update payment record with success
+      paymentRecord.txHash = txHash;
+      paymentRecord.status = 'confirmed';
+      paymentRecord.confirmedAt = Date.now();
+
+      console.log(`[Orchestrator] Payment successful!`);
+      console.log(`[Orchestrator] TX Hash: ${txHash}`);
+      console.log(`[Orchestrator] Explorer: https://${config.x402.network === 'base' ? '' : 'sepolia.'}basescan.org/tx/${txHash}`);
+
+      // Save successful payment record
+      await this.savePaymentRecord(paymentRecord);
+
+      // Update competition with payment record
+      competition.paymentRecord = paymentRecord;
+      await this.services.state.updateCompetition(competition.id, {
+        paymentRecord,
+      });
+
     } catch (error) {
-      console.error(`Failed to pay winner ${competition.winner}:`, error);
+      // Update payment record with failure
+      if (paymentRecord.status !== 'failed') {
+        paymentRecord.status = 'failed';
+        paymentRecord.error = error instanceof Error ? error.message : 'Unknown error';
+      }
+
+      console.error(`[Orchestrator] Payment failed for ${competition.winner}:`, error);
+
+      // Save failed payment record
+      await this.savePaymentRecord(paymentRecord);
+
+      // Still update competition with failed payment info
+      competition.paymentRecord = paymentRecord;
+      await this.services.state.updateCompetition(competition.id, {
+        paymentRecord,
+      });
     }
+  }
+
+  /**
+   * Save a payment record to the state store (if supported)
+   */
+  private async savePaymentRecord(record: PaymentRecord): Promise<void> {
+    try {
+      // Check if state store supports payment records
+      const stateStore = this.services.state as any;
+      if (typeof stateStore.savePaymentRecord === 'function') {
+        await stateStore.savePaymentRecord(record);
+        console.log(`[Orchestrator] Payment record saved: ${record.id}`);
+      }
+    } catch (error) {
+      // Don't fail the payment if we can't save the record
+      console.warn('[Orchestrator] Failed to save payment record:', error);
+    }
+  }
+
+  /**
+   * Get payment statistics (if using real state store)
+   */
+  async getPaymentStats(): Promise<{
+    walletAddress?: string;
+    walletBalance?: number;
+    totalPaid?: number;
+    network: string;
+  }> {
+    const stats: any = {
+      network: config.x402.network,
+    };
+
+    try {
+      // Get wallet info if available
+      if (this.services.payment.getWalletAddress) {
+        stats.walletAddress = await this.services.payment.getWalletAddress();
+      }
+      if (this.services.payment.getBalance) {
+        stats.walletBalance = await this.services.payment.getBalance();
+      }
+
+      // Get total paid from state store if available
+      const stateStore = this.services.state as any;
+      if (typeof stateStore.getPaymentStats === 'function') {
+        const paymentStats = await stateStore.getPaymentStats();
+        stats.totalPaid = paymentStats.totalAmount;
+      }
+    } catch (error) {
+      console.warn('[Orchestrator] Failed to get payment stats:', error);
+    }
+
+    return stats;
   }
 
   /**
