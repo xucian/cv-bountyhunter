@@ -1,4 +1,4 @@
-import type { Issue, Solution, Competition, SolveTask, PaymentRequest, ReviewResult } from './index.js';
+import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult } from './index.js';
 
 // GitHub operations
 export interface IGitHubService {
@@ -31,6 +31,16 @@ export interface IPaymentService {
   requestPayment(agentId: string, amount: number): Promise<PaymentRequest>;
   verifyPayment(signature: string): Promise<boolean>;
   sendBonus(walletAddress: string, amount: number): Promise<string>;
+  // Optional extended methods (implemented in RealPaymentService)
+  getBalance?(): Promise<number>;
+  getWalletAddress?(): Promise<string>;
+  healthCheck?(): Promise<{
+    healthy: boolean;
+    address: string;
+    balance: number;
+    network: string;
+    error?: string;
+  }>;
 }
 
 // Agent communication

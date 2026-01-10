@@ -45,5 +45,21 @@ export const config = {
 
   orchestrator: {
     privateKey: process.env.ORCHESTRATOR_PRIVATE_KEY || '',
+    walletId: process.env.ORCHESTRATOR_WALLET_ID || '',
+  },
+
+  // X402 Protocol Configuration - TESTNET BY DEFAULT
+  x402: {
+    network: (process.env.X402_NETWORK || 'base-sepolia') as 'base' | 'base-sepolia',
+    facilitatorUrl: process.env.X402_FACILITATOR_URL || 'https://x402.coinbase.com',
+    // Base Sepolia testnet USDC by default
+    usdcAddress: process.env.USDC_CONTRACT_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+  },
+
+  // CDP (Coinbase Developer Platform) Configuration
+  cdp: {
+    apiKeyId: process.env.CDP_API_KEY_ID || '',
+    apiKeySecret: process.env.CDP_API_KEY_SECRET || '',
+    walletSecret: process.env.CDP_WALLET_SECRET || '',
   },
 };
