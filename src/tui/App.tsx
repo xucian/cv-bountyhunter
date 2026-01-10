@@ -7,7 +7,7 @@ import { ResultsView } from './components/ResultsView.js';
 import { useCompetition } from './hooks/useCompetition.js';
 import { createServices } from '../services/index.js';
 import { config } from '../config.js';
-import type { Competition, Issue } from '../types/index.js';
+import type { Competition, Issue, Solution } from '../types/index.js';
 
 type ViewState = 'menu' | 'competition' | 'results';
 
@@ -41,75 +41,97 @@ export function App() {
       setCompetition(newCompetition);
       setCurrentView('competition');
 
-      // Simulate competition flow (in production, orchestrator handles this)
-      simulateCompetition(newCompetition);
+      // Run the competition
+      runCompetition(newCompetition);
     },
     [setCompetition]
   );
 
-  // Simulate the competition flow for demo purposes
-  const simulateCompetition = useCallback(
+  // Run the actual competition using services
+  const runCompetition = useCallback(
     async (comp: Competition) => {
       // Start competition
-      await delay(500);
+      await delay(300);
       setStatus('running');
 
-      // Start all agents with slight delays
+      // Start all agents
       for (const agent of comp.agents) {
-        await delay(200);
         updateAgent(agent.id, {
           status: 'solving',
           startedAt: Date.now(),
         });
       }
 
-      // Simulate agents finishing at different times
-      const finishTimes = [
-        { id: 'qwen', delay: 2000 + Math.random() * 1000 },
-        { id: 'llama', delay: 3000 + Math.random() * 1500 },
-        { id: 'deepseek', delay: 2500 + Math.random() * 1000 },
-      ];
+      // Run all agents in parallel using the LLM service
+      const agentPromises = config.agents.map(async (agentConfig) => {
+        const startTime = Date.now();
 
-      // Sort by delay to process in order
-      finishTimes.sort((a, b) => a.delay - b.delay);
+        try {
+          // Build prompt from issue
+          const prompt = `Fix this GitHub issue:
 
-      let winnerId: string | null = null;
+Title: ${comp.issue.title}
 
-      for (const finish of finishTimes) {
-        await delay(finish.delay - (finishTimes[0]?.delay ?? 0));
-        const success = Math.random() > 0.2; // 80% success rate
+Description:
+${comp.issue.body}
 
-        updateAgent(finish.id, {
-          status: success ? 'done' : 'failed',
-          completedAt: Date.now(),
-          solution: success
-            ? {
-                agentId: finish.id,
-                code: '// Solution code would be here',
-                timeMs: finish.delay,
-                success: true,
-              }
-            : undefined,
-        });
+Provide a complete code solution to fix this issue.`;
 
-        // First successful agent is the winner
-        if (success && !winnerId) {
-          winnerId = finish.id;
+          // Call LLM service
+          const code = await services.llm.generateSolution(prompt, agentConfig.model);
+
+          const solution: Solution = {
+            agentId: agentConfig.id,
+            code,
+            timeMs: Date.now() - startTime,
+            success: true,
+          };
+
+          updateAgent(agentConfig.id, {
+            status: 'done',
+            completedAt: Date.now(),
+            solution,
+          });
+
+          return solution;
+        } catch (error) {
+          console.error(`Agent ${agentConfig.id} failed:`, error);
+
+          updateAgent(agentConfig.id, {
+            status: 'failed',
+            completedAt: Date.now(),
+          });
+
+          return null;
         }
-      }
+      });
 
-      // Judge and determine winner
-      await delay(500);
+      // Wait for all agents
+      const results = await Promise.all(agentPromises);
+
+      // Judge phase
+      await delay(300);
       setStatus('judging');
 
-      await delay(1000);
-      if (winnerId) {
-        setWinner(winnerId);
+      // Use reviewer service to pick winner
+      const successfulSolutions = results.filter((r): r is Solution => r !== null && r.success);
+
+      if (successfulSolutions.length > 0) {
+        const reviewResult = await services.reviewer.reviewSolutions(comp.issue, successfulSolutions);
+
+        await delay(500);
+
+        if (reviewResult.winnerId) {
+          setWinner(reviewResult.winnerId);
+        } else {
+          setStatus('completed');
+        }
       } else {
+        await delay(500);
         setStatus('completed');
       }
     },
-    [updateAgent, setStatus, setWinner]
+    [services, updateAgent, setStatus, setWinner]
   );
 
   // Handle transitioning from competition to results

@@ -221,6 +221,28 @@ export function ResultsView({ competition, githubService, onNewCompetition }: Re
         </Box>
       )}
 
+      {/* Winning Solution Preview */}
+      {winner?.solution && (
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderColor="yellow"
+          paddingX={2}
+          paddingY={1}
+          marginY={1}
+        >
+          <Text color="yellow" bold>
+            Winning Solution
+          </Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text dimColor>
+              {winner.solution.code.slice(0, 500)}
+              {winner.solution.code.length > 500 ? '...' : ''}
+            </Text>
+          </Box>
+        </Box>
+      )}
+
       {/* Agent Leaderboard */}
       <Box flexDirection="column" marginY={1}>
         <Text bold color="white">
