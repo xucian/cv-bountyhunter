@@ -11,6 +11,7 @@ interface UseCompetitionReturn {
   updateAgent: (agentId: string, updates: Partial<Competition['agents'][0]>) => void;
   setWinner: (agentId: string) => void;
   setStatus: (status: Competition['status']) => void;
+  setPaymentResult: (txHash: string | null, error?: string) => void;
 }
 
 /**
@@ -63,6 +64,20 @@ export function useCompetition(
     });
   }, []);
 
+  // Set payment result
+  const setPaymentResult = useCallback((txHash: string | null, error?: string) => {
+    setCompetition((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        paymentTxHash: txHash ?? undefined,
+        paymentError: error,
+        status: 'completed',
+        completedAt: Date.now(),
+      };
+    });
+  }, []);
+
   // Polling effect - in a real app, this would fetch from MongoDB
   useEffect(() => {
     if (!competition || competition.status === 'completed') {
@@ -86,6 +101,7 @@ export function useCompetition(
     updateAgent,
     setWinner,
     setStatus,
+    setPaymentResult,
   };
 }
 

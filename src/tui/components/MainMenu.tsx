@@ -8,11 +8,13 @@ import type { IGitHubService } from '../../types/services.js';
 interface MainMenuProps {
   githubService: IGitHubService;
   onStartCompetition: (issue: Issue) => void;
+  onViewHistory?: () => void;
+  onViewLeaderboard?: () => void;
 }
 
 type Screen = 'loading' | 'repo' | 'issues' | 'create-issue';
 
-export function MainMenu({ githubService, onStartCompetition }: MainMenuProps) {
+export function MainMenu({ githubService, onStartCompetition, onViewHistory, onViewLeaderboard }: MainMenuProps) {
   const [screen, setScreen] = useState<Screen>('loading');
   const [repoUrl, setRepoUrl] = useState('');
   const [recentRepos, setRecentRepos] = useState<string[]>([]);
@@ -111,6 +113,10 @@ export function MainMenu({ githubService, onStartCompetition }: MainMenuProps) {
       } else if (input === 'n' || input === 'N') {
         setScreen('create-issue');
         setSelectedIndex(0);
+      } else if ((input === 'h' || input === 'H') && onViewHistory) {
+        onViewHistory();
+      } else if ((input === 'l' || input === 'L') && onViewLeaderboard) {
+        onViewLeaderboard();
       }
     } else if (screen === 'create-issue') {
       if (key.tab) {
@@ -218,7 +224,8 @@ export function MainMenu({ githubService, onStartCompetition }: MainMenuProps) {
         </Box>
 
         <Box marginTop={2} flexDirection="column">
-          <Text dimColor>↑↓ select, ENTER confirm, N new issue, R change repo</Text>
+          <Text dimColor>↑↓ select | ENTER confirm | N new issue | R change repo</Text>
+          <Text dimColor>H history | L leaderboard</Text>
         </Box>
       </Box>
     );

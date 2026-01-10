@@ -36,10 +36,13 @@ export interface Competition {
   id: string;
   issue: Issue;
   bountyAmount: number;
-  status: 'pending' | 'running' | 'judging' | 'completed';
+  status: 'pending' | 'running' | 'judging' | 'paying' | 'completed';
   agents: AgentStatus[];
   winner?: string;
   reviewResult?: ReviewResult;
+  paymentTxHash?: string;
+  paymentError?: string;
+  paymentRecord?: PaymentRecord;
   createdAt: number;
   completedAt?: number;
 }
@@ -54,6 +57,37 @@ export interface PaymentRequest {
   paymentId: string;
   amount: number;
   status: 'pending' | 'completed' | 'failed';
+  txHash?: string;
+  recipient?: string;
+  timestamp?: number;
+  network?: string;
+}
+
+/**
+ * Payment record for tracking completed payments
+ */
+export interface PaymentRecord {
+  id: string;
+  competitionId: string;
+  agentId: string;
+  walletAddress: string;
+  amount: number;
+  txHash: string;
+  status: 'pending' | 'confirmed' | 'failed';
+  network: string;
+  createdAt: number;
+  confirmedAt?: number;
+  blockNumber?: number;
+  error?: string;
+}
+
+/**
+ * Wallet information
+ */
+export interface WalletInfo {
+  address: string;
+  balance: number;
+  network: string;
 }
 
 export interface ReviewScore {

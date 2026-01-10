@@ -55,7 +55,7 @@ export function createServices(): Services {
 
   const reviewer = useMocks.reviewer
     ? new MockReviewerService()
-    : new RealReviewerService(config.fireworks.apiKey);
+    : new RealReviewerService();
 
   console.log('[Services] Initialized with:');
   console.log(`  - GitHub: ${useMocks.github ? 'MOCK' : 'REAL'}`);
