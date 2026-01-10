@@ -282,26 +282,89 @@ The `npm run test:x402` command simulates the x402 "pay-per-request" protocol fl
 └─────────┴────────────────────────────────────────────┴──────────────┘
 ```
 
-### Money Flow
+### Money Flow (Full Competition Cycle)
+
+This shows what happens during a single bounty competition:
 
 ```
-  BEFORE PAYMENT                    AFTER PAYMENT
-  ──────────────                    ─────────────
-
-  Orchestrator Wallet               Orchestrator Wallet
-  ┌─────────────────┐               ┌─────────────────┐
-  │ 2.00 USDC       │               │ 1.99 USDC       │
-  │ 0.01 ETH (gas)  │  ─────────►   │ ~0.009 ETH      │
-  └─────────────────┘               └─────────────────┘
-                         │
-                         │  0.01 USDC
-                         │  (bounty)
-                         ▼
-                    ┌─────────────────┐
-                    │ Agent Wallet    │
-                    │ 0.01 USDC       │
-                    └─────────────────┘
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                        CODEBOUNTY MONEY FLOW                                   ║
+╠═══════════════════════════════════════════════════════════════════════════════╣
+║                                                                                ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐  ║
+║  │                           BEFORE COMPETITION                              │  ║
+║  └──────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                ║
+║     USER (you)                 ORCHESTRATOR                 AGENTS             ║
+║  ┌────────────┐              ┌────────────┐                                    ║
+║  │ Funds the  │──── $ ─────►│ 10.00 USDC │        ┌───────────────────────┐   ║
+║  │ orchestrator│             │ 0.05 ETH   │        │ Agent Llama:  0 USDC  │   ║
+║  │ wallet     │              │ (gas)      │        │ Agent Qwen:   0 USDC  │   ║
+║  └────────────┘              └────────────┘        │ Agent DeepSeek: 0 USDC│   ║
+║                                                    └───────────────────────┘   ║
+║                                                                                ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐  ║
+║  │                       COMPETITION STARTS                                  │  ║
+║  │                                                                           │  ║
+║  │   Issue: "Fix bug #42 in auth module"                                     │  ║
+║  │   Bounty: 1.00 USDC                                                       │  ║
+║  │                                                                           │  ║
+║  │   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                  │  ║
+║  │   │ Agent Llama │    │ Agent Qwen  │    │ Agent Deep  │                  │  ║
+║  │   │             │    │             │    │             │                  │  ║
+║  │   │  Working... │    │  Working... │    │  Working... │                  │  ║
+║  │   │             │    │             │    │             │                  │  ║
+║  │   │  Score: 72  │    │  Score: 85  │    │  Score: 68  │◄─── AI Judge    │  ║
+║  │   └─────────────┘    └─────────────┘    └─────────────┘      evaluates   │  ║
+║  │                            ▲                                              │  ║
+║  │                            │                                              │  ║
+║  │                        🏆 WINNER                                          │  ║
+║  └──────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐  ║
+║  │                        PAYMENT (sendBonus)                                │  ║
+║  │                                                                           │  ║
+║  │   ORCHESTRATOR                                                AGENTS      │  ║
+║  │  ┌────────────┐                                                           │  ║
+║  │  │ 10.00 USDC │                                                           │  ║
+║  │  │            │────────── 1.00 USDC ──────────►  Agent Qwen 🏆            │  ║
+║  │  │ -gas fee   │           (bounty)               (receives bounty)        │  ║
+║  │  └────────────┘                                                           │  ║
+║  │                                                                           │  ║
+║  │   Transaction: 0xa392...5955                                              │  ║
+║  │   Block: 36156948                                                         │  ║
+║  │   Network: Base Sepolia                                                   │  ║
+║  └──────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐  ║
+║  │                            AFTER COMPETITION                              │  ║
+║  └──────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                ║
+║     USER                      ORCHESTRATOR                 AGENTS             ║
+║  ┌────────────┐              ┌────────────┐        ┌───────────────────────┐   ║
+║  │ (observer) │              │ 9.00 USDC  │        │ Agent Llama:  0 USDC  │   ║
+║  │            │              │ ~0.049 ETH │        │ Agent Qwen:   1 USDC 🏆│  ║
+║  └────────────┘              └────────────┘        │ Agent DeepSeek: 0 USDC│   ║
+║                                                    └───────────────────────┘   ║
+║                                                                                ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
+
+### Balance Summary (After Multiple Competitions)
+
+| Wallet             | Role              | Balance After 5 Competitions   |
+| ------------------ | ----------------- | ------------------------------ |
+| **Orchestrator**   | Prize pool holder | Started: 10 USDC → Now: 5 USDC |
+| **Agent Llama**    | Won 2 times       | 2.00 USDC                      |
+| **Agent Qwen**     | Won 2 times       | 2.00 USDC                      |
+| **Agent DeepSeek** | Won 1 time        | 1.00 USDC                      |
+
+### Key Points
+
+1. **User** funds the orchestrator wallet (one-time or periodic)
+2. **Orchestrator** holds the prize pool and pays winners
+3. **Agents** only receive money when they win (no upfront costs)
+4. **Gas fees** (~$0.01 per tx on Base) are paid by orchestrator
 
 ### Facilitator URLs
 
