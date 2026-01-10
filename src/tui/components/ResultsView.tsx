@@ -1,11 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import Spinner from 'ink-spinner';
 import type { Competition, AgentStatus } from '../../types/index.js';
+import type { IGitHubService } from '../../types/services.js';
 
 interface ResultsViewProps {
   competition: Competition;
+  githubService: IGitHubService;
   onNewCompetition: () => void;
 }
+
+type SelectedAction = 'pr' | 'new';
 
 function formatTime(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -50,16 +55,55 @@ function sortAgentsByPerformance(agents: AgentStatus[]): AgentStatus[] {
   });
 }
 
-export function ResultsView({ competition, onNewCompetition }: ResultsViewProps) {
+export function ResultsView({ competition, githubService, onNewCompetition }: ResultsViewProps) {
+  const [selectedAction, setSelectedAction] = useState<SelectedAction>('pr');
+  const [isCreatingPR, setIsCreatingPR] = useState(false);
+  const [prUrl, setPrUrl] = useState<string | null>(null);
+  const [prError, setPrError] = useState<string | null>(null);
+
   const sortedAgents = sortAgentsByPerformance(competition.agents);
   const winner = competition.agents.find((a) => a.id === competition.winner);
   const totalDuration = competition.completedAt
     ? formatDuration(competition.createdAt, competition.completedAt)
     : 'N/A';
 
+  const handleCreatePR = async () => {
+    if (!winner?.solution) return;
+
+    setIsCreatingPR(true);
+    setPrError(null);
+
+    try {
+      const url = await githubService.createSolutionPR(
+        competition.issue,
+        winner.solution,
+        winner.name
+      );
+      setPrUrl(url);
+    } catch (err) {
+      setPrError('Failed to create PR');
+    } finally {
+      setIsCreatingPR(false);
+    }
+  };
+
   useInput((input, key) => {
-    if (input === 'n' || input === 'N' || key.return) {
+    if (isCreatingPR) return;
+
+    if (key.leftArrow || key.rightArrow) {
+      setSelectedAction(selectedAction === 'pr' ? 'new' : 'pr');
+    } else if (key.return) {
+      if (selectedAction === 'pr' && winner?.solution && !prUrl) {
+        handleCreatePR();
+      } else if (selectedAction === 'new' || prUrl) {
+        onNewCompetition();
+      }
+    } else if (input === 'n' || input === 'N') {
       onNewCompetition();
+    } else if (input === 'p' || input === 'P') {
+      if (winner?.solution && !prUrl) {
+        handleCreatePR();
+      }
     }
   });
 
@@ -152,6 +196,31 @@ export function ResultsView({ competition, onNewCompetition }: ResultsViewProps)
         </Box>
       </Box>
 
+      {/* PR Status */}
+      {prUrl && (
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderColor="green"
+          paddingX={2}
+          paddingY={1}
+          marginY={1}
+        >
+          <Text color="green" bold>
+            Pull Request Created!
+          </Text>
+          <Box marginTop={1}>
+            <Text color="cyan">{prUrl}</Text>
+          </Box>
+        </Box>
+      )}
+
+      {prError && (
+        <Box marginY={1}>
+          <Text color="red">{prError}</Text>
+        </Box>
+      )}
+
       {/* Agent Leaderboard */}
       <Box flexDirection="column" marginY={1}>
         <Text bold color="white">
@@ -190,17 +259,41 @@ export function ResultsView({ competition, onNewCompetition }: ResultsViewProps)
         </Box>
       </Box>
 
-      {/* New Competition Option */}
+      {/* Actions */}
       <Box flexDirection="column" alignItems="center" marginTop={2}>
-        <Box
-          borderStyle="round"
-          borderColor="cyan"
-          paddingX={3}
-          paddingY={0}
-        >
-          <Text color="cyan" bold>
-            [ Press N or ENTER to Start New Competition ]
-          </Text>
+        {isCreatingPR ? (
+          <Box>
+            <Text color="cyan">
+              <Spinner type="dots" />
+            </Text>
+            <Text> Creating Pull Request...</Text>
+          </Box>
+        ) : (
+          <Box gap={2}>
+            {winner?.solution && !prUrl && (
+              <Box
+                borderStyle="round"
+                borderColor={selectedAction === 'pr' ? 'green' : 'gray'}
+                paddingX={2}
+              >
+                <Text color={selectedAction === 'pr' ? 'green' : 'gray'} bold>
+                  [ P - Create PR ]
+                </Text>
+              </Box>
+            )}
+            <Box
+              borderStyle="round"
+              borderColor={selectedAction === 'new' || prUrl ? 'cyan' : 'gray'}
+              paddingX={2}
+            >
+              <Text color={selectedAction === 'new' || prUrl ? 'cyan' : 'gray'} bold>
+                [ N - New Competition ]
+              </Text>
+            </Box>
+          </Box>
+        )}
+        <Box marginTop={1}>
+          <Text dimColor>Use arrow keys to select, ENTER to confirm</Text>
         </Box>
       </Box>
     </Box>

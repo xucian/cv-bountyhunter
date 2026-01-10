@@ -144,6 +144,7 @@ export function App() {
       {currentView === 'results' && competition && (
         <ResultsView
           competition={competition}
+          githubService={services.github}
           onNewCompetition={handleNewCompetition}
         />
       )}

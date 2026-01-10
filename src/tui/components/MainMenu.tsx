@@ -106,8 +106,11 @@ export function MainMenu({ githubService, onStartCompetition }: MainMenuProps) {
         } else if (issues[selectedIndex]) {
           onStartCompetition(issues[selectedIndex]);
         }
-      } else if (input === 'r') {
+      } else if (input === 'r' || input === 'R') {
         setScreen('repo');
+      } else if (input === 'n' || input === 'N') {
+        setScreen('create-issue');
+        setSelectedIndex(0);
       }
     } else if (screen === 'create-issue') {
       if (key.tab) {
@@ -214,8 +217,8 @@ export function MainMenu({ githubService, onStartCompetition }: MainMenuProps) {
           </Box>
         </Box>
 
-        <Box marginTop={2}>
-          <Text dimColor>Use ↑↓ to select, ENTER to confirm</Text>
+        <Box marginTop={2} flexDirection="column">
+          <Text dimColor>↑↓ select, ENTER confirm, N new issue, R change repo</Text>
         </Box>
       </Box>
     );

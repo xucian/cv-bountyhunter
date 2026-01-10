@@ -1,5 +1,5 @@
 import type { IGitHubService } from '../../types/services.js';
-import type { Issue } from '../../types/index.js';
+import type { Issue, Solution } from '../../types/index.js';
 
 export class MockGitHubService implements IGitHubService {
   private recentRepos: string[] = [
@@ -143,6 +143,21 @@ The /api/users endpoint is slow when fetching large datasets.
     await this.delay(500);
 
     const prNumber = Math.floor(Math.random() * 1000) + 100;
+    return `https://github.com/${repo}/pull/${prNumber}`;
+  }
+
+  async createSolutionPR(
+    issue: Issue,
+    solution: Solution,
+    agentName: string
+  ): Promise<string> {
+    console.log(`[MockGitHub] Creating solution PR for issue #${issue.number}`);
+    console.log(`[MockGitHub] Solution by: ${agentName}`);
+    console.log(`[MockGitHub] Code preview: ${solution.code.slice(0, 100)}...`);
+    await this.delay(800);
+
+    const prNumber = Math.floor(Math.random() * 1000) + 100;
+    const repo = issue.repoUrl.replace('https://github.com/', '');
     return `https://github.com/${repo}/pull/${prNumber}`;
   }
 

@@ -11,6 +11,7 @@ export interface IGitHubService {
   createIssue(repoUrl: string, title: string, body: string, labels?: string[]): Promise<Issue>;
   createBranch(repo: string, branchName: string): Promise<void>;
   createPR(repo: string, branch: string, title: string, body: string): Promise<string>;
+  createSolutionPR(issue: Issue, solution: Solution, agentName: string): Promise<string>;
 }
 
 // AI/LLM for code generation
