@@ -7,27 +7,23 @@ This document provides the complete, final implementation plan for CodeBounty. I
 
 **Core Concept**: A competitive marketplace where AI agents, powered by different Fireworks AI models, race to fix GitHub issues and earn USDC bounties via the X402 protocol. The entire experience is managed through a beautiful terminal UI built with React Ink.
 
-### Final Architecture
+**Build Philosophy**: Every external service is abstracted behind an interface with both Mock and Real implementations. This allows:
+- One-shot build with all mocks working end-to-end
+- Independent integration of real services without touching other code
+- Easy testing and demo reliability
 
-- **Stack**: TypeScript/Node.js
-- **TUI**: React Ink
-- **Agents**: 1 coding agent codebase, 3 instances with different models (Llama, Qwen, DeepSeek)
-- **GitHub**: `gh` CLI for seamless authentication and operations
-- **Discovery**: Local agent registry (hardcoded URLs for development)
-- **Payments**: X402 for agent-to-orchestrator payments, direct wallet transfers for bonuses
-- **Database**: MongoDB Atlas for vector search (code context) and as the system of record for all competition data.
+### Final Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    React Ink TUI (gh auth)                   │
+│                    React Ink TUI                             │
 └──────────────────┬──────────────────────────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                  Orchestrator (TypeScript)                   │
-│  - Discovers agents via local registry                       │
-│  - Calls agents (triggers X402 payment)                      │
-│  - Stores all state in MongoDB                               │
+│                  Orchestrator                                │
+│  - Uses injected services (mock or real)                     │
+│  - Coordinates competition flow                              │
 └──────────────────┬──────────────────────────────────────────┘
                    │
         ┌──────────┼──────────┐
@@ -35,159 +31,371 @@ This document provides the complete, final implementation plan for CodeBounty. I
     ┌────────┐ ┌────────┐ ┌────────┐
     │Agent 1 │ │Agent 2 │ │Agent 3 │
     │(Llama) │ │(Qwen)  │ │(DeepSeek)│
-    │ Express│ │ Express│ │ Express│
-    │ Server │ │ Server │ │ Server │
     └────────┘ └────────┘ └────────┘
 ```
 
-## 2. Project Setup
+## 2. Service Abstraction Layer
 
-### Directory Structure
+Every external dependency is behind an interface. Toggle implementations via `src/config.ts`.
+
+### Service Interfaces
+
+```typescript
+// src/types/services.ts
+
+// GitHub operations
+interface IGitHubService {
+  isAuthenticated(): Promise<boolean>;
+  getIssue(repoUrl: string, issueNumber: number): Promise<Issue>;
+  createBranch(repo: string, branchName: string): Promise<void>;
+  createPR(repo: string, branch: string, title: string, body: string): Promise<string>;
+}
+
+// AI/LLM for code generation
+interface ILLMService {
+  generateSolution(prompt: string, model: string): Promise<string>;
+}
+
+// State persistence
+interface IStateStore {
+  saveCompetition(competition: Competition): Promise<void>;
+  getCompetition(id: string): Promise<Competition | null>;
+  updateCompetition(id: string, updates: Partial<Competition>): Promise<void>;
+  listCompetitions(): Promise<Competition[]>;
+}
+
+// Payment handling
+interface IPaymentService {
+  requestPayment(agentId: string, amount: number): Promise<PaymentRequest>;
+  verifyPayment(signature: string): Promise<boolean>;
+  sendBonus(walletAddress: string, amount: number): Promise<string>;
+}
+
+// Agent communication
+interface IAgentClient {
+  callAgent(agentUrl: string, task: SolveTask): Promise<Solution>;
+}
+```
+
+### Implementation Toggle
+
+```typescript
+// src/config.ts
+export const config = {
+  useMocks: {
+    github: process.env.MOCK_GITHUB !== 'false',      // default: true
+    llm: process.env.MOCK_LLM !== 'false',            // default: true
+    state: process.env.MOCK_STATE !== 'false',        // default: true
+    payment: process.env.MOCK_PAYMENT !== 'false',    // default: true
+    agents: process.env.MOCK_AGENTS !== 'false',      // default: true
+  },
+
+  agents: [
+    { id: 'llama', name: 'Llama Agent', model: 'accounts/fireworks/models/llama-v3p1-70b-instruct', port: 3001 },
+    { id: 'qwen', name: 'Qwen Agent', model: 'accounts/fireworks/models/qwen2p5-coder-32b-instruct', port: 3002 },
+    { id: 'deepseek', name: 'DeepSeek Agent', model: 'accounts/fireworks/models/deepseek-v3', port: 3003 },
+  ],
+};
+```
+
+### Service Factory
+
+```typescript
+// src/services/index.ts
+import { config } from '../config';
+
+// GitHub
+import { MockGitHubService } from './github/mock';
+import { RealGitHubService } from './github/real';
+
+// LLM
+import { MockLLMService } from './llm/mock';
+import { RealLLMService } from './llm/real';
+
+// State
+import { MockStateStore } from './state/mock';
+import { MongoStateStore } from './state/real';
+
+// Payment
+import { MockPaymentService } from './payment/mock';
+import { RealPaymentService } from './payment/real';
+
+// Agent Client
+import { MockAgentClient } from './agent-client/mock';
+import { RealAgentClient } from './agent-client/real';
+
+export function createServices() {
+  return {
+    github: config.useMocks.github ? new MockGitHubService() : new RealGitHubService(),
+    llm: config.useMocks.llm ? new MockLLMService() : new RealLLMService(),
+    state: config.useMocks.state ? new MockStateStore() : new MongoStateStore(),
+    payment: config.useMocks.payment ? new MockPaymentService() : new RealPaymentService(),
+    agentClient: config.useMocks.agents ? new MockAgentClient() : new RealAgentClient(),
+  };
+}
+
+export type Services = ReturnType<typeof createServices>;
+```
+
+## 3. Project Structure
 
 ```
 codebounty/
 ├── src/
-│   ├── agents/              # Agent logic & server
-│   │   ├── coding-agent.ts
-│   │   ├── reviewer-agent.ts
-│   │   └── agent-server.ts
-│   ├── orchestrator/        # Main coordination logic
-│   │   └── orchestrator.ts
-│   ├── tui/                 # React Ink components
-│   │   └── ...
-│   ├── services/            # External service integrations
-│   │   ├── mongodb.ts
-│   │   ├── github.ts
-│   │   └── ...
-│   ├── indexer/             # Codebase indexing
-│   │   └── indexer.ts
-│   ├── types/               # Shared type definitions
-│   │   └── index.ts
-│   └── launch-agents.ts     # Script to start all agent servers
-├── .env
+│   ├── types/
+│   │   ├── index.ts              # Domain types (Competition, Issue, Solution, etc.)
+│   │   └── services.ts           # Service interfaces
+│   │
+│   ├── config.ts                 # Feature flags and agent config
+│   │
+│   ├── services/
+│   │   ├── index.ts              # Service factory
+│   │   ├── github/
+│   │   │   ├── mock.ts           # Returns fake issue data
+│   │   │   └── real.ts           # Uses `gh` CLI
+│   │   ├── llm/
+│   │   │   ├── mock.ts           # Returns fake code after delay
+│   │   │   └── real.ts           # Calls Fireworks AI
+│   │   ├── state/
+│   │   │   ├── mock.ts           # In-memory Map
+│   │   │   └── real.ts           # MongoDB
+│   │   ├── payment/
+│   │   │   ├── mock.ts           # Logs payments, always succeeds
+│   │   │   └── real.ts           # X402 protocol
+│   │   └── agent-client/
+│   │       ├── mock.ts           # Direct function call with fake delay
+│   │       └── real.ts           # HTTP calls to agent servers
+│   │
+│   ├── agents/
+│   │   ├── agent-server.ts       # Express server for each agent
+│   │   ├── coding-agent.ts       # Core agent logic (uses ILLMService)
+│   │   └── x402-middleware.ts    # Payment gate middleware
+│   │
+│   ├── orchestrator/
+│   │   └── orchestrator.ts       # Competition coordinator
+│   │
+│   ├── tui/
+│   │   ├── index.tsx             # Entry point
+│   │   ├── App.tsx               # Main app with navigation
+│   │   ├── components/
+│   │   │   ├── MainMenu.tsx
+│   │   │   ├── CompetitionView.tsx
+│   │   │   ├── AgentCard.tsx
+│   │   │   └── ResultsView.tsx
+│   │   └── hooks/
+│   │       └── useCompetition.ts
+│   │
+│   └── launch-agents.ts          # Starts all 3 agent servers
+│
+├── .env.example
 ├── package.json
 └── tsconfig.json
 ```
 
-### `package.json`
+## 4. Mock Implementations
 
-```json
-{
-  "name": "codebounty",
-  "version": "1.0.0",
-  "scripts": {
-    "dev:tui": "tsx src/tui/index.tsx",
-    "dev:agents": "tsx src/launch-agents.ts",
-    "build": "tsc",
-    "start:agents": "node dist/launch-agents.js",
-    "start:tui": "node dist/tui/index.js"
-  },
-  "dependencies": {
-    "ink": "^4.4.1",
-    "ink-spinner": "^5.0.0",
-    "ink-text-input": "^5.0.1",
-    "react": "^18.2.0",
-    "mongodb": "^6.3.0",
-    "@x402/client": "^1.0.0",
-    "@x402/evm-exact": "^1.0.0",
-    "viem": "^2.0.0",
-    "express": "^4.18.2",
-    "voyageai": "^1.0.0",
-    "dotenv": "^16.3.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.2.0",
-    "@types/node": "^20.0.0",
-    "@types/express": "^4.17.21",
-    "typescript": "^5.3.0",
-    "tsx": "^4.7.0"
+### Mock GitHub Service
+```typescript
+// src/services/github/mock.ts
+export class MockGitHubService implements IGitHubService {
+  async isAuthenticated() { return true; }
+
+  async getIssue(repoUrl: string, issueNumber: number): Promise<Issue> {
+    return {
+      number: issueNumber,
+      title: 'Fix null pointer exception in user service',
+      body: 'When a user has no profile picture, the app crashes...',
+      repoUrl,
+      labels: ['bug', 'bounty:50'],
+    };
+  }
+
+  async createBranch() { console.log('[MOCK] Branch created'); }
+  async createPR() { return 'https://github.com/example/repo/pull/123'; }
+}
+```
+
+### Mock LLM Service
+```typescript
+// src/services/llm/mock.ts
+export class MockLLMService implements ILLMService {
+  async generateSolution(prompt: string, model: string): Promise<string> {
+    // Simulate thinking time (2-5 seconds)
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+
+    return `
+// Fix for null pointer exception
+function getUserAvatar(user: User): string {
+  return user.profilePicture ?? '/default-avatar.png';
+}
+    `.trim();
   }
 }
 ```
 
-### `.env` File
+### Mock State Store
+```typescript
+// src/services/state/mock.ts
+export class MockStateStore implements IStateStore {
+  private competitions = new Map<string, Competition>();
 
-```
-# MongoDB
-MONGODB_URI="your_mongodb_atlas_uri"
-
-# Fireworks AI
-FIREWORKS_API_KEY="your_fireworks_api_key"
-
-# Voyage AI
-VOYAGE_API_KEY="your_voyage_api_key"
-
-# Orchestrator Wallet (for X402 payments)
-ORCHESTRATOR_PRIVATE_KEY="0x..."
-
-# Agent Wallets (to receive payments)
-AGENT_LLAMA_WALLET_ADDRESS="0x..."
-AGENT_QWEN_WALLET_ADDRESS="0x..."
-AGENT_DEEPSEEK_WALLET_ADDRESS="0x..."
+  async saveCompetition(c: Competition) { this.competitions.set(c.id, c); }
+  async getCompetition(id: string) { return this.competitions.get(id) ?? null; }
+  async updateCompetition(id: string, updates: Partial<Competition>) {
+    const existing = this.competitions.get(id);
+    if (existing) this.competitions.set(id, { ...existing, ...updates });
+  }
+  async listCompetitions() { return Array.from(this.competitions.values()); }
+}
 ```
 
-## 3. Core Implementation
+### Mock Payment Service
+```typescript
+// src/services/payment/mock.ts
+export class MockPaymentService implements IPaymentService {
+  async requestPayment(agentId: string, amount: number) {
+    console.log(`[MOCK] Payment requested: ${amount} USDC to ${agentId}`);
+    return { paymentId: `pay_${Date.now()}`, amount, status: 'pending' };
+  }
 
-### GitHub Service (`gh` CLI)
+  async verifyPayment(signature: string) { return true; }
 
-**File**: `src/services/github.ts`
+  async sendBonus(walletAddress: string, amount: number) {
+    console.log(`[MOCK] Bonus sent: ${amount} USDC to ${walletAddress}`);
+    return `tx_${Date.now()}`;
+  }
+}
+```
 
-- Uses `execAsync` to run `gh` commands.
-- `isAuthenticated()` checks `gh auth status`.
-- `getIssue()` uses `gh issue view --json`.
-- `createPR()` uses `gh pr create`.
-- **Benefit**: No token management. Relies on user's existing `gh` authentication.
+### Mock Agent Client
+```typescript
+// src/services/agent-client/mock.ts
+export class MockAgentClient implements IAgentClient {
+  async callAgent(agentUrl: string, task: SolveTask): Promise<Solution> {
+    // Simulate agent work (3-8 seconds)
+    await new Promise(r => setTimeout(r, 3000 + Math.random() * 5000));
 
-### Agent Server (Local Development)
+    return {
+      agentId: task.agentId,
+      code: `// Solution from ${task.agentId}\nfunction fix() { return true; }`,
+      timeMs: Math.floor(3000 + Math.random() * 5000),
+      success: Math.random() > 0.2, // 80% success rate
+    };
+  }
+}
+```
 
-**File**: `src/agents/agent-server.ts`
+## 5. Domain Types
 
-1. Each agent is an `express` server.
-2. The `/solve` endpoint is X402-enabled:
-   - If no `payment-signature` header, returns `402 Payment Required` with payment details.
-   - If payment signature is present, it processes the request.
-3. For local development, agents are registered in a hardcoded local registry.
+```typescript
+// src/types/index.ts
+export interface Issue {
+  number: number;
+  title: string;
+  body: string;
+  repoUrl: string;
+  labels: string[];
+}
 
-### Launching Agents
+export interface Solution {
+  agentId: string;
+  code: string;
+  timeMs: number;
+  success: boolean;
+}
 
-**File**: `src/launch-agents.ts`
+export interface AgentStatus {
+  id: string;
+  name: string;
+  status: 'idle' | 'solving' | 'done' | 'failed';
+  solution?: Solution;
+  startedAt?: number;
+  completedAt?: number;
+}
 
-- A simple script that imports and starts the 3 agent servers on different ports (3001, 3002, 3003).
-- This allows all agents to run in a single process for easy development.
+export interface Competition {
+  id: string;
+  issue: Issue;
+  bountyAmount: number;
+  status: 'pending' | 'running' | 'judging' | 'completed';
+  agents: AgentStatus[];
+  winner?: string;
+  createdAt: number;
+  completedAt?: number;
+}
 
-### Orchestrator (Local Discovery)
+export interface SolveTask {
+  agentId: string;
+  issue: Issue;
+  codeContext?: string;
+}
 
-**File**: `src/orchestrator/orchestrator.ts`
+export interface PaymentRequest {
+  paymentId: string;
+  amount: number;
+  status: 'pending' | 'completed' | 'failed';
+}
+```
 
-- **Discovery**: Uses a local list of agent URLs for development (localhost:3001, 3002, 3003).
-- **Execution**: Calls each agent's `/solve` endpoint. The `wrapFetchWithPayment` from the X402 client SDK automatically handles the 402 payment flow.
-- **State Management**: All competition progress (discovery, agent status, review, payments) is logged to MongoDB.
+## 6. Build Order
 
-### React Ink TUI
+Build everything in one pass with this order:
 
-**File**: `src/tui/`
+1. **Types** (`src/types/`) - All interfaces and domain types
+2. **Config** (`src/config.ts`) - Feature flags
+3. **Mock Services** (`src/services/*/mock.ts`) - All mock implementations
+4. **Service Factory** (`src/services/index.ts`) - Wires up mocks
+5. **Orchestrator** (`src/orchestrator/`) - Uses injected services
+6. **TUI** (`src/tui/`) - React Ink components
+7. **Agent Server** (`src/agents/`) - Express server (uses ILLMService)
+8. **Launch Script** (`src/launch-agents.ts`)
 
-- **Real-time Updates**: The `CompetitionView` component uses a custom `useCompetition` hook that polls the MongoDB `competitions` collection every 250ms.
-- **Component-based**: The UI is broken down into reusable components like `AgentCard`, `ProgressBar`, and `ResultsView`.
-- **Claude-like UX**: Clean, minimalist design with spinners, colors, and borders to provide a polished, professional feel.
+After one-shot build with mocks, swap in real implementations one at a time:
+- `MOCK_LLM=false` - Real Fireworks AI
+- `MOCK_GITHUB=false` - Real `gh` CLI
+- `MOCK_PAYMENT=false` - Real X402
+- `MOCK_STATE=false` - Real MongoDB
+- `MOCK_AGENTS=false` - Real HTTP calls
 
-## 4. 2-Hour Development Plan
+## 7. Environment Variables
 
-| Time | Focus | Key Tasks |
-|---|---|---|
-| **0:00-0:20** | **Foundation** | Project setup, install deps, MongoDB connection, basic types |
-| **0:20-0:40** | **Agents** | Agent server (Express), `/solve` endpoint with X402, launch script |
-| **0:40-1:00** | **Agent Logic** | Implement `CodingAgent` with Fireworks AI (3 model configs) |
-| **1:00-1:20** | **Orchestrator** | Local discovery, competition workflow, payment logic |
-| **1:20-1:40** | **TUI** | Build Main Menu, live `CompetitionView`, basic styling |
-| **1:40-2:00** | **Polish** | End-to-end testing, bug fixes, demo prep |
+```bash
+# .env.example
 
-## 5. Why This Plan Will Succeed
+# Service toggles (all default to mock=true)
+MOCK_GITHUB=true
+MOCK_LLM=true
+MOCK_STATE=true
+MOCK_PAYMENT=true
+MOCK_AGENTS=true
 
-- **Simplicity**: The "one agent, three models" approach with local discovery is achievable in 2 hours.
-- **Completeness**: It demonstrates the X402 payment protocol, satisfying the hackathon track requirements.
-- **Impressive UX**: The React Ink TUI provides a polished, visually compelling demo that stands out.
-- **Robustness**: Using the `gh` CLI and a structured TypeScript codebase with error handling makes the project more stable.
-- **Clear Path**: The time-boxed plan provides a clear, actionable path from setup to demo.
+# Real service credentials (only needed when mocks disabled)
+MONGODB_URI=
+FIREWORKS_API_KEY=
+VOYAGE_API_KEY=
+ORCHESTRATOR_PRIVATE_KEY=
+AGENT_LLAMA_WALLET=
+AGENT_QWEN_WALLET=
+AGENT_DEEPSEEK_WALLET=
+```
 
-This plan is focused, technically sound, and designed to produce a working hackathon demo in 2 hours.
+## 8. 2-Hour Build Plan
+
+| Time | Task |
+|------|------|
+| 0:00-0:15 | Project setup, types, config |
+| 0:15-0:35 | All mock services |
+| 0:35-0:55 | Orchestrator logic |
+| 0:55-1:20 | TUI components |
+| 1:20-1:35 | Agent server + launch script |
+| 1:35-2:00 | Wire up, test end-to-end with mocks |
+
+## 9. Why This Approach Works
+
+- **Parallel Development**: Multiple devs can work on real implementations independently
+- **Demo Reliability**: Mocks guarantee a working demo even if APIs fail
+- **Easy Testing**: Each service can be tested in isolation
+- **Gradual Integration**: Swap one real service at a time, verify, repeat
+- **Clean Architecture**: Dependency injection makes the code maintainable
+
+The entire system works end-to-end with mocks from day one. Real integrations are just configuration changes.
