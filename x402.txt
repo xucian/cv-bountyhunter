@@ -1,0 +1,77 @@
+Agentic Commerce on MongoDB: CDP Wallets + x402-Driven Tool Chaining
+By: Kevin Leffew, GTM @ CoinbaseDev
+
+Prize amount: $2,000 USDC
+In this track, participants will build demand-side agents that autonomously discover, reason over, and pay for chained tool calls in order to accomplish a specific end-to-end task (e.g. data aggregation + decisioning + execution). 
+MongoDB will serve as the system of record for agent memory, tool metadata, payment history, and budget state, enabling agents to reason over past actions, track spend, and coordinate multi-step workflows reliably.
+The emphasis is on designing agentic flows that:
+Use CDP wallets (embedded or server-hosted) to manage funds, sign payment payloads, and custody assets securely;
+
+
+Leverage x402 payments within a multi-step agent flow, i.e. chaining tool calls across services that may respond with HTTP 402, requiring the agent to negotiate and settle micropayments mid-flow;
+
+
+Use MongoDB to persist agent memory, tool responses, payment receipts, and budget constraints, enabling agents to reason across time, recover from failures, and optimize future tool chains;
+
+
+Compose chained tools (e.g. API endpoints, LLMs, external services) under a single autonomous agent that reasons about cost, value, and ordering of calls.
+
+
+Why this is compelling
+By embedding CDP wallets (via Coinbase’s Embedded Wallets or Server Wallets) into agents, builders can give agents real onchain stablecoin capability with minimal friction. See Coinbase’s Embedded Wallet docs: “Embedded Wallets … invisible to users while providing full onchain functionality.” Coinbase Developer Docs
+
+
+Server-hosted CDP wallets (via CDP Wallet API / v2) enable agents or backends to orchestrate signing, gas abstraction, and cross-chain flows. Coinbase Developer Docs
+
+
+The x402 protocol (open-source via the Coinbase x402 repo) reactivates HTTP 402 “Payment Required” semantics for machine-to-machine stablecoin payments. GitHub
+
+
+Using x402, an agent can call a paid tool, receive a 402 challenge, fulfill the payment via its wallet, and then resume the call — effectively weaving payments into the tool-chaining logic. Coinbase Developer Docs, The Cloudflare Blog
+
+
+The recently launched x402 Bazaar offers discovery of services for agents, enabling agents to autonomously find, probe, and pay for new capabilities. Coinbase
+
+
+Together, the integration of CDP wallets + x402 unlocks a new paradigm: fully autonomous agents with real economic agency — no external billing UI, no manual settlement, just programmatic reasoning and action.
+
+
+Example flow (sketch)
+Agent receives a user intent (e.g. “Design and launch a social media campaign for product X”).
+
+
+It queries the x402 Bazaar to discover available tools (e.g. “generate image,” “copywriting prompt,” “social-posting API”).
+
+
+For a tool endpoint that charges per call, it issues the request, receives a 402 Payment Required response with pricing instructions.
+
+
+The agent consults its budget model, signs the payment payload via its CDP wallet, attaches the X-PAYMENT header, and retries the call.
+
+
+The agent chains results (e.g. get images, get captions, post to social) — each possibly paid — finally delivering the completed campaign.
+
+
+The agent keeps track of spend vs utility and may dynamically prune or reorder future calls for cost efficiency.
+
+
+
+Links:
+Coinbase x402 GitHub repo: https://github.com/coinbase/x402 GitHub
+
+
+x402 overview and usage in CDP docs (Wallets + payments) Coinbase Developer Docs
+
+
+Coinbase Embedded Wallets docs: https://docs.cdp.coinbase.com/embedded-wallets/welcome Coinbase Developer Docs
+
+
+CDP Server Wallet v2 quickstart: https://docs.cdp.coinbase.com/server-wallets/v2/introduction/quickstart Coinbase Developer Docs
+
+
+x402 Bazaar / agent discovery: “Introducing x402 Bazaar” Coinbase
+
+
+Cloudflare + x402 blog: “Launching the x402 Foundation …” The Cloudflare Blog
+
+
