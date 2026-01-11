@@ -1,4 +1,5 @@
 import type { ILLMService, StreamCallback } from '../../types/services.js';
+import type { LLMProvider } from '../../types/index.js';
 
 // Different mock solutions for variety
 const MOCK_SOLUTIONS = [
@@ -51,16 +52,17 @@ export const validator = new PasswordValidator();`,
 ];
 
 export class MockLLMService implements ILLMService {
-  async generateSolution(prompt: string, model: string): Promise<string> {
-    return this.generateSolutionStreaming(prompt, model, () => {});
+  async generateSolution(prompt: string, model: string, provider?: LLMProvider): Promise<string> {
+    return this.generateSolutionStreaming(prompt, model, () => {}, provider);
   }
 
   async generateSolutionStreaming(
     prompt: string,
     model: string,
-    onChunk: StreamCallback
+    onChunk: StreamCallback,
+    provider?: LLMProvider
   ): Promise<string> {
-    console.log(`[MockLLM] Streaming solution with model: ${model}`);
+    console.log(`[MockLLM] Streaming solution with model: ${model} (provider: ${provider || 'default'})`);
 
     // Pick a random solution and add model info
     const solutionIndex = Math.floor(Math.random() * MOCK_SOLUTIONS.length);

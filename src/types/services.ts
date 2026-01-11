@@ -1,4 +1,4 @@
-import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus, TaskEvaluation } from './index.js';
+import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus, TaskEvaluation, LLMProvider } from './index.js';
 import type { CompetitionEvent } from './events.js';
 
 // GitHub operations
@@ -12,7 +12,7 @@ export interface IGitHubService {
   createIssue(repoUrl: string, title: string, body: string, labels?: string[]): Promise<Issue>;
   createBranch(repo: string, branchName: string): Promise<void>;
   createPR(repo: string, branch: string, title: string, body: string): Promise<string>;
-  createSolutionPR(issue: Issue, solution: Solution, agentName: string): Promise<string>;
+  createSolutionPR(issue: Issue, solution: Solution, agentName: string, codeOnly?: boolean): Promise<string>;
 }
 
 // Streaming callback type
@@ -20,11 +20,12 @@ export type StreamCallback = (chunk: string, accumulated: string) => void;
 
 // AI/LLM for code generation
 export interface ILLMService {
-  generateSolution(prompt: string, model: string): Promise<string>;
+  generateSolution(prompt: string, model: string, provider?: LLMProvider): Promise<string>;
   generateSolutionStreaming?(
     prompt: string,
     model: string,
-    onChunk: StreamCallback
+    onChunk: StreamCallback,
+    provider?: LLMProvider
   ): Promise<string>;
 }
 

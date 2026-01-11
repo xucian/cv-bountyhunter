@@ -94,6 +94,59 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
+  // POST /competitions/:id/pr - Create a PR from the winning solution
+  const prMatch = req.url?.match(/^\/competitions\/([^/]+)\/pr$/);
+  if (req.method === 'POST' && prMatch) {
+    const competitionId = prMatch[1];
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { codeOnly = false } = JSON.parse(body || '{}') as { codeOnly?: boolean };
+
+        log('info', 'WS', `Creating PR for competition ${competitionId} (codeOnly: ${codeOnly})`);
+
+        // Get the competition
+        const competition = await services.state.getCompetition(competitionId);
+        if (!competition) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Competition not found' }));
+          return;
+        }
+
+        if (!competition.winner) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Competition has no winner' }));
+          return;
+        }
+
+        // Find the winning agent and solution
+        const winningAgent = competition.agents.find(a => a.id === competition.winner);
+        if (!winningAgent?.solution) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Winning solution not found' }));
+          return;
+        }
+
+        // Create the PR
+        const prUrl = await services.github.createSolutionPR(
+          competition.issue,
+          winningAgent.solution,
+          winningAgent.name,
+          codeOnly
+        );
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ prUrl, competitionId }));
+      } catch (err) {
+        log('error', 'WS', `Failed to create PR: ${err}`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Failed to create PR' }));
+      }
+    });
+    return;
+  }
+
   // 404
   res.writeHead(404);
   res.end('Not Found');

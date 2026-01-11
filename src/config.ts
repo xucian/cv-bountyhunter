@@ -13,38 +13,87 @@ export const config = {
   },
 
   agents: [
+    // Fireworks Models
     {
       id: 'llama',
-      name: 'Llama Agent',
+      name: 'Llama',
       model: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
+      provider: 'fireworks',
       port: 3001,
       walletAddress: process.env.AGENT_LLAMA_WALLET,
-      // Economics: ~$0.05 cost per task (mid-tier)
       costPerToken: 0.000025,
       avgTokensPerSolution: 2000,
-      minimumMargin: 0.25, // needs $0.0625 min → accepts at $0.07+
+      minimumMargin: 0.25,
     },
     {
       id: 'qwen',
-      name: 'Qwen Agent',
+      name: 'Qwen',
       model: 'accounts/fireworks/models/qwen3-coder-30b-a3b-instruct',
+      provider: 'fireworks',
       port: 3002,
       walletAddress: process.env.AGENT_QWEN_WALLET,
-      // Economics: ~$0.03 cost per task (budget option)
       costPerToken: 0.000015,
       avgTokensPerSolution: 2000,
-      minimumMargin: 0.20, // needs $0.036 min → accepts at $0.04+
+      minimumMargin: 0.20,
     },
     {
       id: 'deepseek',
-      name: 'DeepSeek Agent',
+      name: 'DeepSeek',
       model: 'accounts/fireworks/models/deepseek-v3p2',
+      provider: 'fireworks',
       port: 3003,
       walletAddress: process.env.AGENT_DEEPSEEK_WALLET,
-      // Economics: ~$0.08 cost per task (premium)
       costPerToken: 0.00004,
       avgTokensPerSolution: 2000,
-      minimumMargin: 0.30, // needs $0.104 min → declines at $0.10!
+      minimumMargin: 0.30,
+    },
+    // OpenAI
+    {
+      id: 'gpt',
+      name: 'GPT-4o',
+      model: 'gpt-4o',
+      provider: 'openai',
+      port: 3004,
+      walletAddress: process.env.AGENT_GPT_WALLET,
+      costPerToken: 0.00001,
+      avgTokensPerSolution: 2000,
+      minimumMargin: 0.25,
+    },
+    // Anthropic
+    {
+      id: 'opus',
+      name: 'Claude Opus',
+      model: 'claude-sonnet-4-20250514',
+      provider: 'anthropic',
+      port: 3005,
+      walletAddress: process.env.AGENT_OPUS_WALLET,
+      costPerToken: 0.000015,
+      avgTokensPerSolution: 2000,
+      minimumMargin: 0.25,
+    },
+    // Google
+    {
+      id: 'gemini',
+      name: 'Gemini',
+      model: 'gemini-2.0-flash',
+      provider: 'google',
+      port: 3006,
+      walletAddress: process.env.AGENT_GEMINI_WALLET,
+      costPerToken: 0.000001,
+      avgTokensPerSolution: 2000,
+      minimumMargin: 0.20,
+    },
+    // xAI
+    {
+      id: 'grok',
+      name: 'Grok',
+      model: 'grok-3',
+      provider: 'xai',
+      port: 3007,
+      walletAddress: process.env.AGENT_GROK_WALLET,
+      costPerToken: 0.00001,
+      avgTokensPerSolution: 2000,
+      minimumMargin: 0.25,
     },
   ] as AgentConfig[],
 

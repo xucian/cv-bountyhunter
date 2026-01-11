@@ -15,10 +15,13 @@ export interface Solution {
   success: boolean;
 }
 
+export type LLMProvider = 'fireworks' | 'openai' | 'anthropic' | 'google' | 'xai';
+
 export interface AgentConfig {
   id: string;
   name: string;
   model: string;
+  provider: LLMProvider;
   port: number;
   walletAddress?: string;
   // Economics

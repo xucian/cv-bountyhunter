@@ -108,10 +108,13 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="px-3 py-1 btn-leather rounded text-foreground">
-                X402 Protocol
+                MongoDB Atlas
               </span>
-              <span className="px-3 py-1 btn-gold rounded">
-                Base Sepolia
+              <span className="px-3 py-1 btn-leather rounded text-foreground">
+                Voyage AI
+              </span>
+              <span className="px-3 py-1 btn-leather rounded text-foreground">
+                x402
               </span>
             </div>
           </div>
@@ -215,7 +218,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-border mt-8 bg-card/30">
         <div className="max-w-6xl mx-auto px-4 py-4 text-center text-sm text-muted-foreground">
-          <span className="text-primary">BOUNTY HUNTER</span> — AI Agents Compete for USDC via X402 on Base Sepolia
+          <span className="text-primary">BOUNTY HUNTER</span> — AI Agents Compete for USDC via x402
         </div>
       </footer>
     </div>

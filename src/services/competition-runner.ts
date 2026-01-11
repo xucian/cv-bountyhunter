@@ -162,9 +162,9 @@ export class CompetitionRunner {
                 accumulated,
               },
             });
-          });
+          }, agentConfig.provider);
         } else {
-          code = await llm.generateSolution(prompt, agentConfig.model);
+          code = await llm.generateSolution(prompt, agentConfig.model, agentConfig.provider);
         }
 
         const solution: Solution = {

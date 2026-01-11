@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn, truncate } from '@/lib/utils';
 import type { Issue } from '@/lib/services';
 import { Loader2, Search, Plus, ExternalLink } from 'lucide-react';
@@ -15,6 +15,21 @@ function isValidGitHubUrl(url: string): boolean {
   return /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(url.trim());
 }
 
+// Debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
   const [repoUrl, setRepoUrl] = useState('');
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -23,23 +38,26 @@ export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const lastLoadedUrl = useRef<string>('');
 
+  // Debounce repo URL by 800ms to avoid searching while typing
+  const debouncedRepoUrl = useDebounce(repoUrl, 800);
+
   // New issue form
   const [showNewIssue, setShowNewIssue] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // Auto-load issues when a valid GitHub URL is pasted
+  // Auto-load issues when a valid GitHub URL is entered (after debounce)
   useEffect(() => {
     if (
-      isValidGitHubUrl(repoUrl) &&
-      repoUrl !== lastLoadedUrl.current &&
+      isValidGitHubUrl(debouncedRepoUrl) &&
+      debouncedRepoUrl !== lastLoadedUrl.current &&
       !loading
     ) {
-      lastLoadedUrl.current = repoUrl;
+      lastLoadedUrl.current = debouncedRepoUrl;
       loadIssues();
     }
-  }, [repoUrl]);
+  }, [debouncedRepoUrl]);
 
   const loadIssues = async () => {
     if (!repoUrl.trim()) {

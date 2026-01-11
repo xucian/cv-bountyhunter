@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { AgentCard } from './AgentCard';
 import { cn } from '@/lib/utils';
 import type { Competition } from '@/lib/services';
@@ -14,6 +15,7 @@ import {
   Search,
   FileCode,
   Cpu,
+  GitPullRequest,
 } from 'lucide-react';
 
 // RAG progress state
@@ -346,6 +348,35 @@ function StatusMessage({
 
 function CompletionDetails({ competition }: { competition: Competition }) {
   const winner = competition.agents.find((a) => a.id === competition.winner);
+  const [creatingPR, setCreatingPR] = useState(false);
+  const [prUrl, setPrUrl] = useState<string | null>(null);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [codeOnly, setCodeOnly] = useState(false);
+
+  const handleCreatePR = async () => {
+    setCreatingPR(true);
+    setPrError(null);
+
+    try {
+      const res = await fetch(`/api/competitions/${competition.id}/pr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codeOnly }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create PR');
+      }
+
+      setPrUrl(data.prUrl);
+    } catch (err) {
+      setPrError(err instanceof Error ? err.message : 'Failed to create PR');
+    } finally {
+      setCreatingPR(false);
+    }
+  };
 
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
@@ -422,6 +453,65 @@ function CompletionDetails({ competition }: { competition: Competition }) {
                 </div>
               ))}
           </div>
+        </div>
+      )}
+
+      {/* Create PR Section */}
+      {winner && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <h4 className="text-sm font-medium mb-3">Create Pull Request</h4>
+
+          {prUrl ? (
+            <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span className="text-sm">PR created:</span>
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-500 hover:underline font-mono text-sm"
+              >
+                {prUrl}
+              </a>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={codeOnly}
+                  onChange={(e) => setCodeOnly(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <span>Code only (no commentary/metadata)</span>
+              </label>
+
+              {prError && (
+                <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-red-500 text-sm flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {prError}
+                </div>
+              )}
+
+              <button
+                onClick={handleCreatePR}
+                disabled={creatingPR}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+              >
+                {creatingPR ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Creating PR...
+                  </>
+                ) : (
+                  <>
+                    <GitPullRequest className="w-4 h-4" />
+                    Create PR from Solution
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
