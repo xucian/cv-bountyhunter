@@ -88,13 +88,33 @@ export class CompetitionRunner {
       });
     }
 
-    // Phase 3: Run all agents in parallel
+    // Phase 3: Run all agents in parallel with streaming
     const agentPromises = config.agents.map(async (agentConfig) => {
       const startTime = Date.now();
 
       try {
         const prompt = this.buildPrompt(competition.issue);
-        const code = await llm.generateSolution(prompt, agentConfig.model);
+
+        // Use streaming if available
+        let code: string;
+        if (llm.generateSolutionStreaming) {
+          code = await llm.generateSolutionStreaming(prompt, agentConfig.model, (chunk, accumulated) => {
+            // Emit streaming event
+            this.emitEvent({
+              type: 'agent:streaming',
+              competitionId: competition.id,
+              timestamp: Date.now(),
+              payload: {
+                agentId: agentConfig.id,
+                agentName: agentConfig.name,
+                chunk,
+                accumulated,
+              },
+            });
+          });
+        } else {
+          code = await llm.generateSolution(prompt, agentConfig.model);
+        }
 
         const solution: Solution = {
           agentId: agentConfig.id,
@@ -150,7 +170,7 @@ export class CompetitionRunner {
 
     const results = await Promise.all(agentPromises);
 
-    // Phase 4: Judging
+    // Phase 4: Judging with streaming
     await this.delay(300);
     await state.updateCompetition(competition.id, { status: 'judging' });
 
@@ -164,7 +184,24 @@ export class CompetitionRunner {
     const successfulSolutions = results.filter((r): r is Solution => r !== null && r.success);
 
     if (successfulSolutions.length > 0) {
-      const reviewResult = await reviewer.reviewSolutions(competition.issue, successfulSolutions);
+      // Use streaming reviewer if available
+      let reviewResult;
+      if (reviewer.reviewSolutionsStreaming) {
+        reviewResult = await reviewer.reviewSolutionsStreaming(
+          competition.issue,
+          successfulSolutions,
+          (chunk, accumulated) => {
+            this.emitEvent({
+              type: 'judging:streaming',
+              competitionId: competition.id,
+              timestamp: Date.now(),
+              payload: { chunk, accumulated },
+            });
+          }
+        );
+      } else {
+        reviewResult = await reviewer.reviewSolutions(competition.issue, successfulSolutions);
+      }
 
       await this.delay(500);
 

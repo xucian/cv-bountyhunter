@@ -8,9 +8,11 @@ export type CompetitionEventType =
   | 'competition:created'
   | 'competition:started'
   | 'agent:solving'
+  | 'agent:streaming'
   | 'agent:done'
   | 'agent:failed'
   | 'competition:judging'
+  | 'judging:streaming'
   | 'competition:paying'
   | 'competition:completed'
   | 'competition:sync';
@@ -66,6 +68,19 @@ export interface AgentSolvingEvent extends CompetitionEventBase {
 }
 
 /**
+ * Agent streaming partial code
+ */
+export interface AgentStreamingEvent extends CompetitionEventBase {
+  type: 'agent:streaming';
+  payload: {
+    agentId: string;
+    agentName: string;
+    chunk: string;
+    accumulated: string;
+  };
+}
+
+/**
  * Agent completed successfully
  */
 export interface AgentDoneEvent extends CompetitionEventBase {
@@ -95,6 +110,17 @@ export interface AgentFailedEvent extends CompetitionEventBase {
 export interface CompetitionJudgingEvent extends CompetitionEventBase {
   type: 'competition:judging';
   payload: Record<string, never>;
+}
+
+/**
+ * Judge streaming thinking/reasoning
+ */
+export interface JudgingStreamingEvent extends CompetitionEventBase {
+  type: 'judging:streaming';
+  payload: {
+    chunk: string;
+    accumulated: string;
+  };
 }
 
 /**
@@ -129,9 +155,11 @@ export type CompetitionEvent =
   | CompetitionCreatedEvent
   | CompetitionStartedEvent
   | AgentSolvingEvent
+  | AgentStreamingEvent
   | AgentDoneEvent
   | AgentFailedEvent
   | CompetitionJudgingEvent
+  | JudgingStreamingEvent
   | CompetitionPayingEvent
   | CompetitionCompletedEvent;
 

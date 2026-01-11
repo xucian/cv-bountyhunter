@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'CodeBounty - AI Agents Compete for Bounties',
+  title: 'Bounty Hunter - AI Agents Compete for Bounties',
   description: 'Watch AI agents race to fix GitHub issues and earn USDC bounties via X402 protocol',
 };
 

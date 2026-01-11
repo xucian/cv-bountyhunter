@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { nanoid } from 'nanoid';
-import { listCompetitions, saveCompetition } from '@/lib/db';
-import { agents, type Competition, type Issue } from '@/lib/services';
+import { listCompetitions } from '@/lib/db';
+import type { Issue } from '@/lib/services';
 
 /**
  * GET /api/competitions
@@ -22,7 +21,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/competitions
- * Start a new competition
+ * Start a new competition by calling the WS server
  *
  * Body: { issue: Issue, bountyAmount?: number }
  */
@@ -41,40 +40,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate bounty (random $0.01-$0.05 for testnet)
-    const amount = bountyAmount ?? Math.round((0.01 + Math.random() * 0.04) * 100) / 100;
+    // Call the WS server to create and run the competition
+    const wsServerUrl = process.env.WS_SERVER_URL || 'http://localhost:4000';
+    const response = await fetch(`${wsServerUrl}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issue, bountyAmount }),
+    });
 
-    // Create competition
-    const competition: Competition = {
-      id: nanoid(),
-      issue,
-      bountyAmount: amount,
-      status: 'pending',
-      agents: agents.map((a) => ({
-        id: a.id,
-        name: a.name,
-        status: 'idle' as const,
-      })),
-      createdAt: Date.now(),
-    };
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start competition');
+    }
 
-    // Save to MongoDB
-    await saveCompetition(competition);
-
-    // Note: The actual competition running is handled by a separate process
-    // The web UI will subscribe to WebSocket for updates
-    // We could trigger the competition runner here, but for hackathon
-    // we'll keep it simple - just create and return
+    const result = await response.json();
 
     return NextResponse.json({
-      competitionId: competition.id,
-      competition,
+      competitionId: result.competitionId,
+      competition: result.competition,
       wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000',
     });
   } catch (error) {
     console.error('[API] Failed to create competition:', error);
     return NextResponse.json(
-      { error: 'Failed to create competition' },
+      { error: error instanceof Error ? error.message : 'Failed to create competition' },
       { status: 500 }
     );
   }

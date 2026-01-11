@@ -15,9 +15,17 @@ export interface IGitHubService {
   createSolutionPR(issue: Issue, solution: Solution, agentName: string): Promise<string>;
 }
 
+// Streaming callback type
+export type StreamCallback = (chunk: string, accumulated: string) => void;
+
 // AI/LLM for code generation
 export interface ILLMService {
   generateSolution(prompt: string, model: string): Promise<string>;
+  generateSolutionStreaming?(
+    prompt: string,
+    model: string,
+    onChunk: StreamCallback
+  ): Promise<string>;
 }
 
 // State persistence
@@ -58,6 +66,11 @@ export interface IAgentClient {
 // Code review service
 export interface IReviewerService {
   reviewSolutions(issue: Issue, solutions: Solution[]): Promise<ReviewResult>;
+  reviewSolutionsStreaming?(
+    issue: Issue,
+    solutions: Solution[],
+    onChunk: StreamCallback
+  ): Promise<ReviewResult>;
 }
 
 // RAG (Retrieval-Augmented Generation) service for code indexing and search

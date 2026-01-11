@@ -9,9 +9,11 @@ type CompetitionEventType =
   | 'competition:created'
   | 'competition:started'
   | 'agent:solving'
+  | 'agent:streaming'
   | 'agent:done'
   | 'agent:failed'
   | 'competition:judging'
+  | 'judging:streaming'
   | 'competition:paying'
   | 'competition:completed';
 
@@ -28,7 +30,15 @@ interface CompetitionEvent {
     txHash?: string;
     error?: string;
     reviewResult?: any;
+    chunk?: string;
+    accumulated?: string;
   };
+}
+
+// Streaming state for agents and judge
+interface StreamingState {
+  agentCode: Record<string, string>; // agentId -> accumulated code
+  judgingThinking: string;
 }
 
 interface UseCompetitionSocketOptions {
@@ -42,6 +52,7 @@ interface UseCompetitionSocketReturn {
   connected: boolean;
   events: CompetitionEvent[];
   error: string | null;
+  streaming: StreamingState;
 }
 
 /**
@@ -56,6 +67,10 @@ export function useCompetitionSocket({
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState<CompetitionEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [streaming, setStreaming] = useState<StreamingState>({
+    agentCode: {},
+    judgingThinking: '',
+  });
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -88,7 +103,29 @@ export function useCompetitionSocket({
           // Handle initial sync
           if (data.type === 'competition:sync' && data.payload.competition) {
             setCompetition(data.payload.competition);
+            // Reset streaming state on sync
+            setStreaming({ agentCode: {}, judgingThinking: '' });
             return;
+          }
+
+          // Handle streaming events
+          if (data.type === 'agent:streaming' && data.payload.agentId && data.payload.accumulated) {
+            setStreaming((prev) => ({
+              ...prev,
+              agentCode: {
+                ...prev.agentCode,
+                [data.payload.agentId!]: data.payload.accumulated!,
+              },
+            }));
+            return; // Don't add to events list (too many)
+          }
+
+          if (data.type === 'judging:streaming' && data.payload.accumulated) {
+            setStreaming((prev) => ({
+              ...prev,
+              judgingThinking: data.payload.accumulated!,
+            }));
+            return; // Don't add to events list (too many)
           }
 
           // Apply incremental updates
@@ -142,7 +179,7 @@ export function useCompetitionSocket({
     };
   }, [connect, competitionId]);
 
-  return { competition, connected, events, error };
+  return { competition, connected, events, error, streaming };
 }
 
 /**

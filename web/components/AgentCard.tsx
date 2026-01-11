@@ -8,9 +8,10 @@ import { Loader2, Check, X, Clock, Trophy } from 'lucide-react';
 interface AgentCardProps {
   agent: AgentStatus;
   isWinner?: boolean;
+  streamingCode?: string;
 }
 
-export function AgentCard({ agent, isWinner }: AgentCardProps) {
+export function AgentCard({ agent, isWinner, streamingCode }: AgentCardProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
 
   // Update elapsed time while solving
@@ -62,13 +63,15 @@ export function AgentCard({ agent, isWinner }: AgentCardProps) {
         <span className="font-mono text-sm">{displayTime}</span>
       </div>
 
-      {/* Solution preview */}
-      {agent.solution && (
+      {/* Solution preview - show streaming or final */}
+      {(agent.solution || streamingCode) && (
         <div className="mt-3">
-          <div className="text-xs text-muted-foreground mb-1">Solution preview:</div>
-          <pre className="text-xs bg-muted/50 rounded p-2 overflow-hidden max-h-24 text-muted-foreground">
-            {agent.solution.code.slice(0, 200)}
-            {agent.solution.code.length > 200 && '...'}
+          <div className="text-xs text-muted-foreground mb-1">
+            {agent.status === 'solving' ? 'Generating...' : 'Solution:'}
+          </div>
+          <pre className="text-xs bg-muted/50 rounded p-2 overflow-hidden max-h-32 text-muted-foreground font-mono">
+            {agent.solution?.code || streamingCode || ''}
+            {agent.status === 'solving' && <span className="animate-pulse">|</span>}
           </pre>
         </div>
       )}

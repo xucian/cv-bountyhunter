@@ -4,14 +4,18 @@
  * - Runs on port 4000 (or WS_PORT env var)
  * - Clients subscribe to specific competition IDs
  * - Broadcasts events from CompetitionRunner to connected clients
+ * - HTTP endpoint to trigger competition runs
  *
  * Usage:
  *   bun run ws      # or: npx tsx src/ws-server.ts
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
+import { createServer } from 'http';
 import { createServices } from './services/index.js';
+import { CompetitionRunner } from './services/competition-runner.js';
 import type { CompetitionEvent, WSClientMessage } from './types/events.js';
+import type { Issue } from './types/index.js';
 import { log } from './utils/logger.js';
 import { enableFileLogging } from './utils/logger.js';
 
@@ -29,8 +33,74 @@ const clientRooms = new Map<WebSocket, Set<string>>();
 // Create services (to get event emitter)
 const services = createServices();
 
-// Create WebSocket server
-const wss = new WebSocketServer({ port: PORT });
+// Create competition runner
+const competitionRunner = new CompetitionRunner(services);
+
+// Create HTTP server for API endpoints
+const httpServer = createServer(async (req, res) => {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  // POST /run - Start a new competition
+  if (req.method === 'POST' && req.url === '/run') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { issue, bountyAmount } = JSON.parse(body) as { issue: Issue; bountyAmount?: number };
+
+        if (!issue || !issue.title || !issue.repoUrl) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Issue with title and repoUrl is required' }));
+          return;
+        }
+
+        log('info', 'WS', `Starting competition for issue: ${issue.title}`);
+
+        // Create and run competition
+        const competition = await competitionRunner.createCompetition(issue, bountyAmount);
+
+        // Run in background (don't await)
+        competitionRunner.run(competition).catch(err => {
+          log('error', 'WS', `Competition ${competition.id} failed: ${err}`);
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          competitionId: competition.id,
+          competition,
+        }));
+      } catch (err) {
+        log('error', 'WS', `Failed to start competition: ${err}`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to start competition' }));
+      }
+    });
+    return;
+  }
+
+  // Health check
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', clients: wss.clients.size }));
+    return;
+  }
+
+  // 404
+  res.writeHead(404);
+  res.end('Not Found');
+});
+
+// Create WebSocket server attached to HTTP server
+const wss = new WebSocketServer({ server: httpServer });
 
 log('info', 'WS', `WebSocket server starting on port ${PORT}...`);
 
@@ -142,28 +212,32 @@ services.events.subscribe((event) => {
   broadcast(event.competitionId, event);
 });
 
-console.log(`
+// Start HTTP server (which includes WebSocket)
+httpServer.listen(PORT, () => {
+  console.log(`
 ╔════════════════════════════════════════════════╗
 ║     CodeBounty WebSocket Server                ║
-║     Listening on ws://localhost:${PORT}          ║
+║     HTTP:  http://localhost:${PORT}              ║
+║     WS:    ws://localhost:${PORT}                ║
 ╚════════════════════════════════════════════════╝
 `);
 
-log('info', 'WS', `WebSocket server running on port ${PORT}`);
+  log('info', 'WS', `Server running on port ${PORT}`);
+});
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
   log('info', 'WS', 'Shutting down...');
-  wss.close(() => {
-    log('info', 'WS', 'WebSocket server closed');
+  httpServer.close(() => {
+    log('info', 'WS', 'Server closed');
     process.exit(0);
   });
 });
 
 process.on('SIGTERM', () => {
   log('info', 'WS', 'Shutting down...');
-  wss.close(() => {
-    log('info', 'WS', 'WebSocket server closed');
+  httpServer.close(() => {
+    log('info', 'WS', 'Server closed');
     process.exit(0);
   });
 });

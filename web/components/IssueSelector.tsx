@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { cn, truncate } from '@/lib/utils';
 import type { Issue } from '@/lib/services';
 import { Loader2, Search, Plus, ExternalLink } from 'lucide-react';
@@ -10,18 +10,36 @@ interface IssueSelectorProps {
   disabled?: boolean;
 }
 
+// Check if string looks like a complete GitHub repo URL
+function isValidGitHubUrl(url: string): boolean {
+  return /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(url.trim());
+}
+
 export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
   const [repoUrl, setRepoUrl] = useState('');
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+  const lastLoadedUrl = useRef<string>('');
 
   // New issue form
   const [showNewIssue, setShowNewIssue] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // Auto-load issues when a valid GitHub URL is pasted
+  useEffect(() => {
+    if (
+      isValidGitHubUrl(repoUrl) &&
+      repoUrl !== lastLoadedUrl.current &&
+      !loading
+    ) {
+      lastLoadedUrl.current = repoUrl;
+      loadIssues();
+    }
+  }, [repoUrl]);
 
   const loadIssues = async () => {
     if (!repoUrl.trim()) {
@@ -66,7 +84,7 @@ export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
         body: JSON.stringify({
           repo: repoUrl.trim(),
           title: newTitle.trim(),
-          body: newBody.trim() || 'Created via CodeBounty',
+          body: newBody.trim() || 'Created via Bounty Hunter',
         }),
       });
 

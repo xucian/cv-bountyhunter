@@ -21,7 +21,7 @@ export default function Home() {
   const [leaderboardOpen, setLeaderboardOpen] = useState(true);
 
   // WebSocket connection for active competition
-  const { competition: liveCompetition, connected } = useCompetitionSocket({
+  const { competition: liveCompetition, connected, streaming } = useCompetitionSocket({
     competitionId: activeCompetition?.id || '',
     wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000',
   });
@@ -48,14 +48,6 @@ export default function Home() {
       const res = await fetch('/api/competitions');
       const data = await res.json();
       setCompetitions(data);
-
-      // If there's a running competition, set it as active
-      const running = data.find(
-        (c: Competition) => c.status !== 'completed'
-      );
-      if (running) {
-        setActiveCompetition(running);
-      }
     } catch (error) {
       console.error('Failed to load competitions:', error);
     } finally {
@@ -108,7 +100,7 @@ export default function Home() {
                 <Zap className="w-8 h-8 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">CodeBounty</h1>
+                <h1 className="text-2xl font-bold">Bounty Hunter</h1>
                 <p className="text-sm text-muted-foreground">
                   AI Agents Compete for USDC Bounties
                 </p>
@@ -127,42 +119,44 @@ export default function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-        {/* Active Competition or New Competition */}
+        {/* Start New Competition - Always visible */}
         <section className="border border-border rounded-lg p-6">
-          {activeCompetition ? (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Github className="w-5 h-5" />
+              Start New Competition
+            </h2>
+            <IssueSelector
+              onSelectIssue={handleStartCompetition}
+              disabled={starting}
+            />
+          </div>
+        </section>
+
+        {/* Active Competition - Show when there is one */}
+        {activeCompetition && (
+          <section className="border border-border rounded-lg p-6">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <Zap className="w-5 h-5 text-primary" />
-                  Active Competition
+                  {activeCompetition.status === 'completed' ? 'Last Competition' : 'Active Competition'}
                 </h2>
-                {activeCompetition.status === 'completed' && (
-                  <button
-                    onClick={() => setActiveCompetition(null)}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    Start New Competition
-                  </button>
-                )}
+                <button
+                  onClick={() => setActiveCompetition(null)}
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Dismiss
+                </button>
               </div>
               <CompetitionPanel
                 competition={activeCompetition}
                 connected={connected}
+                streaming={streaming}
               />
             </div>
-          ) : (
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <Github className="w-5 h-5" />
-                Start New Competition
-              </h2>
-              <IssueSelector
-                onSelectIssue={handleStartCompetition}
-                disabled={starting}
-              />
-            </div>
-          )}
-        </section>
+          </section>
+        )}
 
         {/* History Section */}
         <section className="border border-border rounded-lg overflow-hidden">
@@ -221,7 +215,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-border mt-8">
         <div className="max-w-6xl mx-auto px-4 py-4 text-center text-sm text-muted-foreground">
-          CodeBounty - AI Agents Competing with X402 Payments on Base Sepolia
+          Bounty Hunter - AI Agents Competing with X402 Payments on Base Sepolia
         </div>
       </footer>
     </div>

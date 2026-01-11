@@ -3,14 +3,21 @@
 import { AgentCard } from './AgentCard';
 import { cn } from '@/lib/utils';
 import type { Competition } from '@/lib/services';
-import { Loader2, Gavel, CreditCard, CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader2, Gavel, CreditCard, CheckCircle, AlertCircle, Zap } from 'lucide-react';
+
+// Streaming state type
+interface StreamingState {
+  agentCode: Record<string, string>;
+  judgingThinking: string;
+}
 
 interface CompetitionPanelProps {
   competition: Competition;
   connected?: boolean;
+  streaming?: StreamingState;
 }
 
-export function CompetitionPanel({ competition, connected }: CompetitionPanelProps) {
+export function CompetitionPanel({ competition, connected, streaming }: CompetitionPanelProps) {
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -47,12 +54,27 @@ export function CompetitionPanel({ competition, connected }: CompetitionPanelPro
             key={agent.id}
             agent={agent}
             isWinner={competition.winner === agent.id}
+            streamingCode={streaming?.agentCode[agent.id]}
           />
         ))}
       </div>
 
+      {/* Judge Thinking - show during judging */}
+      {competition.status === 'judging' && streaming?.judgingThinking && (
+        <div className="border border-yellow-500/30 bg-yellow-500/5 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Gavel className="w-5 h-5 text-yellow-500" />
+            <span className="font-semibold text-yellow-500">AI Judge Thinking</span>
+          </div>
+          <pre className="text-sm whitespace-pre-wrap font-mono text-muted-foreground">
+            {streaming.judgingThinking}
+            <span className="animate-pulse">|</span>
+          </pre>
+        </div>
+      )}
+
       {/* Status Message */}
-      <StatusMessage competition={competition} />
+      {!streaming?.judgingThinking && <StatusMessage competition={competition} />}
 
       {/* Results */}
       {competition.status === 'completed' && competition.winner && (
@@ -64,18 +86,18 @@ export function CompetitionPanel({ competition, connected }: CompetitionPanelPro
 
 function StatusIndicator({ status }: { status: Competition['status'] }) {
   const config = {
-    pending: { icon: Loader2, text: 'Pending', className: 'text-muted-foreground' },
-    running: { icon: Loader2, text: 'Racing', className: 'text-primary animate-spin' },
-    judging: { icon: Gavel, text: 'Judging', className: 'text-yellow-500' },
-    paying: { icon: CreditCard, text: 'Paying', className: 'text-cyan-500' },
-    completed: { icon: CheckCircle, text: 'Completed', className: 'text-green-500' },
+    pending: { icon: Loader2, text: 'Pending', className: 'text-muted-foreground', spin: true },
+    running: { icon: Zap, text: 'Racing', className: 'text-primary', spin: false },
+    judging: { icon: Gavel, text: 'Judging', className: 'text-yellow-500', spin: false },
+    paying: { icon: CreditCard, text: 'Paying', className: 'text-cyan-500', spin: false },
+    completed: { icon: CheckCircle, text: 'Completed', className: 'text-green-500', spin: false },
   }[status];
 
   const Icon = config.icon;
 
   return (
     <span className={cn('flex items-center gap-1 text-sm', config.className)}>
-      <Icon className={cn('w-4 h-4', status === 'running' && 'animate-spin')} />
+      <Icon className={cn('w-4 h-4', config.spin && 'animate-spin')} />
       {config.text}
     </span>
   );

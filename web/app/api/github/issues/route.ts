@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     // Create issue using gh CLI
     const { stdout } = await execAsync(
-      `gh issue create --repo ${repo} --title "${title.replace(/"/g, '\\"')}" --body "${(issueBody || 'Created via CodeBounty').replace(/"/g, '\\"')}" --json number,title,body,labels`
+      `gh issue create --repo ${repo} --title "${title.replace(/"/g, '\\"')}" --body "${(issueBody || 'Created via Bounty Hunter').replace(/"/g, '\\"')}" --json number,title,body,labels`
     );
 
     const rawIssue = JSON.parse(stdout) as {
