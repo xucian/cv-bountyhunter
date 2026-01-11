@@ -72,29 +72,25 @@ export function enableFileLogging(): void {
 
   console.log = function(message?: any, ...args: any[]) {
     writeToFile('INFO', String(message ?? ''), ...args);
-    // In debug mode, also show on stdout; otherwise write to stderr to avoid TUI conflicts
+    // Only show console output in debug mode; otherwise silent (file-only logging)
     if (TUI_DEBUG_MODE) {
       originalLog(message, ...args);
-    } else {
-      process.stderr.write(`[INFO] ${message} ${args.join(' ')}\n`);
     }
   };
 
   console.error = function(message?: any, ...args: any[]) {
     writeToFile('ERROR', String(message ?? ''), ...args);
+    // Only show console output in debug mode; otherwise silent (file-only logging)
     if (TUI_DEBUG_MODE) {
       originalError(message, ...args);
-    } else {
-      process.stderr.write(`[ERROR] ${message} ${args.join(' ')}\n`);
     }
   };
 
   console.warn = function(message?: any, ...args: any[]) {
     writeToFile('WARN', String(message ?? ''), ...args);
+    // Only show console output in debug mode; otherwise silent (file-only logging)
     if (TUI_DEBUG_MODE) {
       originalWarn(message, ...args);
-    } else {
-      process.stderr.write(`[WARN] ${message} ${args.join(' ')}\n`);
     }
   };
 
