@@ -1,4 +1,4 @@
-import type { IReviewerService } from '../../types/services.js';
+import type { IReviewerService, StreamCallback } from '../../types/services.js';
 import type { Issue, Solution, ReviewResult, ReviewScore } from '../../types/index.js';
 
 /**
@@ -7,15 +7,23 @@ import type { Issue, Solution, ReviewResult, ReviewScore } from '../../types/ind
  */
 export class MockReviewerService implements IReviewerService {
   async reviewSolutions(issue: Issue, solutions: Solution[]): Promise<ReviewResult> {
-    const startTime = Date.now();
+    return this.reviewSolutionsStreaming(issue, solutions, () => {});
+  }
 
-    // Simulate review time (1-3 seconds)
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+  async reviewSolutionsStreaming(
+    issue: Issue,
+    solutions: Solution[],
+    onChunk: StreamCallback
+  ): Promise<ReviewResult> {
+    const startTime = Date.now();
 
     // Filter to only successful solutions
     const successfulSolutions = solutions.filter(s => s.success);
 
     if (successfulSolutions.length === 0) {
+      const noSolutionThinking = `Analyzing submissions for "${issue.title}"...\n\nNo successful solutions were submitted. All agents failed to produce working code.\n\nConclusion: No winner can be determined.`;
+      await this.streamText(noSolutionThinking, onChunk);
+
       return {
         winnerId: null,
         scores: solutions.map(s => this.generateScore(s, false)),
@@ -24,12 +32,45 @@ export class MockReviewerService implements IReviewerService {
       };
     }
 
-    // Score each solution
-    const scores: ReviewScore[] = solutions.map(s => this.generateScore(s, s.success));
+    // Score each solution with streaming thinking
+    const scores: ReviewScore[] = [];
+    let thinkingAccumulated = '';
+
+    // Stream the thinking process
+    const intro = `🔍 Analyzing ${successfulSolutions.length} solutions for: "${issue.title}"\n\n`;
+    await this.streamText(intro, onChunk);
+    thinkingAccumulated += intro;
+
+    for (const solution of solutions) {
+      const score = this.generateScore(solution, solution.success);
+      scores.push(score);
+
+      const agentThinking = `📋 ${solution.agentId.toUpperCase()}:\n` +
+        `   Correctness: ${score.correctness}/100\n` +
+        `   Code Quality: ${score.codeQuality}/100\n` +
+        `   Completeness: ${score.completeness}/100\n` +
+        `   → Overall Score: ${score.score}/100\n` +
+        `   ${score.reasoning}\n\n`;
+
+      await this.streamText(agentThinking, (chunk, acc) => {
+        thinkingAccumulated += chunk;
+        onChunk(chunk, thinkingAccumulated);
+      });
+    }
 
     // Sort by score descending
     const sortedScores = [...scores].sort((a, b) => b.score - a.score);
     const winner = sortedScores[0];
+
+    // Stream the decision
+    const decision = `🏆 DECISION:\n` +
+      `Winner: ${winner.agentId} with score ${winner.score}/100\n` +
+      `The winning solution demonstrated superior correctness and code quality.\n`;
+
+    await this.streamText(decision, (chunk, acc) => {
+      thinkingAccumulated += chunk;
+      onChunk(chunk, thinkingAccumulated);
+    });
 
     // Generate summary
     const summary = this.generateSummary(issue, winner, scores);
@@ -40,6 +81,22 @@ export class MockReviewerService implements IReviewerService {
       summary,
       reviewTimeMs: Date.now() - startTime,
     };
+  }
+
+  private async streamText(text: string, onChunk: StreamCallback): Promise<void> {
+    let accumulated = '';
+    const chunkSize = 2 + Math.floor(Math.random() * 4); // 2-5 chars
+
+    for (let i = 0; i < text.length; i += chunkSize) {
+      const chunk = text.slice(i, i + chunkSize);
+      accumulated += chunk;
+      onChunk(chunk, accumulated);
+      await this.delay(15 + Math.random() * 25);
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   private generateScore(solution: Solution, isSuccessful: boolean): ReviewScore {

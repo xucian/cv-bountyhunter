@@ -19,6 +19,10 @@ export const config = {
       model: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
       port: 3001,
       walletAddress: process.env.AGENT_LLAMA_WALLET,
+      // Economics: ~$0.05 cost per task (mid-tier)
+      costPerToken: 0.000025,
+      avgTokensPerSolution: 2000,
+      minimumMargin: 0.25, // needs $0.0625 min → accepts at $0.07+
     },
     {
       id: 'qwen',
@@ -26,6 +30,10 @@ export const config = {
       model: 'accounts/fireworks/models/qwen3-coder-30b-a3b-instruct',
       port: 3002,
       walletAddress: process.env.AGENT_QWEN_WALLET,
+      // Economics: ~$0.03 cost per task (budget option)
+      costPerToken: 0.000015,
+      avgTokensPerSolution: 2000,
+      minimumMargin: 0.20, // needs $0.036 min → accepts at $0.04+
     },
     {
       id: 'deepseek',
@@ -33,6 +41,10 @@ export const config = {
       model: 'accounts/fireworks/models/deepseek-v3p2',
       port: 3003,
       walletAddress: process.env.AGENT_DEEPSEEK_WALLET,
+      // Economics: ~$0.08 cost per task (premium)
+      costPerToken: 0.00004,
+      avgTokensPerSolution: 2000,
+      minimumMargin: 0.30, // needs $0.104 min → declines at $0.10!
     },
   ] as AgentConfig[],
 

@@ -1,4 +1,5 @@
-import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus } from './index.js';
+import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus, TaskEvaluation } from './index.js';
+import type { CompetitionEvent } from './events.js';
 
 // GitHub operations
 export interface IGitHubService {
@@ -14,9 +15,17 @@ export interface IGitHubService {
   createSolutionPR(issue: Issue, solution: Solution, agentName: string): Promise<string>;
 }
 
+// Streaming callback type
+export type StreamCallback = (chunk: string, accumulated: string) => void;
+
 // AI/LLM for code generation
 export interface ILLMService {
   generateSolution(prompt: string, model: string): Promise<string>;
+  generateSolutionStreaming?(
+    prompt: string,
+    model: string,
+    onChunk: StreamCallback
+  ): Promise<string>;
 }
 
 // State persistence
@@ -50,12 +59,18 @@ export interface IPaymentService {
 
 // Agent communication
 export interface IAgentClient {
+  evaluateAgent(agentUrl: string, issue: Issue, bountyAmount: number): Promise<TaskEvaluation & { agentId: string }>;
   callAgent(agentUrl: string, task: SolveTask): Promise<Solution>;
 }
 
 // Code review service
 export interface IReviewerService {
   reviewSolutions(issue: Issue, solutions: Solution[]): Promise<ReviewResult>;
+  reviewSolutionsStreaming?(
+    issue: Issue,
+    solutions: Solution[],
+    onChunk: StreamCallback
+  ): Promise<ReviewResult>;
 }
 
 // RAG (Retrieval-Augmented Generation) service for code indexing and search
@@ -97,6 +112,20 @@ export interface CodeChunk {
   score?: number; // Relevance score from vector search
 }
 
+// Event emitter for real-time updates
+export interface IEventEmitter {
+  /**
+   * Emit an event to all subscribers
+   */
+  emit(event: CompetitionEvent): Promise<void>;
+
+  /**
+   * Subscribe to events
+   * Returns unsubscribe function
+   */
+  subscribe(handler: (event: CompetitionEvent) => void): () => void;
+}
+
 // All services bundled
 export interface Services {
   github: IGitHubService;
@@ -106,4 +135,5 @@ export interface Services {
   agentClient: IAgentClient;
   reviewer: IReviewerService;
   rag: IRAGService;
+  events: IEventEmitter;
 }

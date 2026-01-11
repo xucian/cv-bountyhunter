@@ -1,48 +1,86 @@
-import type { ILLMService } from '../../types/services.js';
+import type { ILLMService, StreamCallback } from '../../types/services.js';
 
-export class MockLLMService implements ILLMService {
-  async generateSolution(prompt: string, model: string): Promise<string> {
-    console.log(`[MockLLM] Generating solution with model: ${model}`);
-    console.log(`[MockLLM] Prompt length: ${prompt.length} chars`);
-
-    // Wait 2-5 seconds to simulate LLM thinking
-    const thinkTime = 2000 + Math.random() * 3000;
-    await this.delay(thinkTime);
-
-    console.log(`[MockLLM] Generated solution in ${Math.round(thinkTime)}ms`);
-
-    // Return a realistic-looking code fix
-    return `// Fix for authentication bug
-// Model: ${model}
-
+// Different mock solutions for variety
+const MOCK_SOLUTIONS = [
+  `// Solution using functional approach
 export function sanitizePassword(password: string): string {
-  // FIXED: Don't strip special characters from passwords
-  // Special characters are valid and should be preserved
-
-  // Only trim whitespace from beginning and end
+  // FIXED: Preserve special characters in passwords
   return password.trim();
 }
 
 export function validateCredentials(email: string, password: string): boolean {
-  // Validate email format
   const emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return false;
-  }
-
-  // Password should be at least 8 characters
-  // Special characters are now properly supported
-  if (password.length < 8) {
-    return false;
-  }
-
+  if (!emailRegex.test(email)) return false;
+  if (password.length < 8) return false;
   return true;
+}`,
+  `// Solution with enhanced validation
+function isValidEmail(email: string): boolean {
+  return /^[\\w.-]+@[\\w.-]+\\.\\w+$/.test(email);
 }
 
-// Tests
-console.assert(sanitizePassword('p@ss!word#123') === 'p@ss!word#123');
-console.assert(validateCredentials('test@example.com', 'p@ss!word#123') === true);
-`;
+function isStrongPassword(password: string): boolean {
+  // At least 8 chars, 1 uppercase, 1 lowercase, 1 number
+  const hasLength = password.length >= 8;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasNumber = /\\d/.test(password);
+  return hasLength && hasUpper && hasLower && hasNumber;
+}
+
+export function authenticate(email: string, password: string): boolean {
+  return isValidEmail(email) && isStrongPassword(password);
+}`,
+  `// Object-oriented solution
+class PasswordValidator {
+  private minLength = 8;
+
+  validate(password: string): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (password.length < this.minLength) {
+      errors.push(\`Password must be at least \${this.minLength} characters\`);
+    }
+
+    // Special characters are now allowed!
+    return { valid: errors.length === 0, errors };
+  }
+}
+
+export const validator = new PasswordValidator();`,
+];
+
+export class MockLLMService implements ILLMService {
+  async generateSolution(prompt: string, model: string): Promise<string> {
+    return this.generateSolutionStreaming(prompt, model, () => {});
+  }
+
+  async generateSolutionStreaming(
+    prompt: string,
+    model: string,
+    onChunk: StreamCallback
+  ): Promise<string> {
+    console.log(`[MockLLM] Streaming solution with model: ${model}`);
+
+    // Pick a random solution and add model info
+    const solutionIndex = Math.floor(Math.random() * MOCK_SOLUTIONS.length);
+    const solution = `// Model: ${model}\n${MOCK_SOLUTIONS[solutionIndex]}`;
+
+    // Stream character by character with small delays
+    let accumulated = '';
+    const chunkSize = 3 + Math.floor(Math.random() * 5); // 3-7 chars at a time
+
+    for (let i = 0; i < solution.length; i += chunkSize) {
+      const chunk = solution.slice(i, i + chunkSize);
+      accumulated += chunk;
+      onChunk(chunk, accumulated);
+
+      // Small delay between chunks (10-30ms)
+      await this.delay(10 + Math.random() * 20);
+    }
+
+    console.log(`[MockLLM] Finished streaming ${solution.length} chars`);
+    return solution;
   }
 
   private delay(ms: number): Promise<void> {

@@ -7,6 +7,11 @@ interface SolveRequestBody {
   issue: Issue;
 }
 
+interface EvaluateRequestBody {
+  issue: Issue;
+  bountyAmount: number;
+}
+
 /**
  * Agent Server - Express server that exposes agent capabilities via HTTP
  * Each agent runs on its own port and can solve GitHub issues
@@ -24,7 +29,12 @@ export class AgentServer {
     this.agent = new CodingAgent(
       agentConfig.id,
       agentConfig.model,
-      llmService
+      llmService,
+      {
+        costPerToken: agentConfig.costPerToken,
+        avgTokensPerSolution: agentConfig.avgTokensPerSolution,
+        minimumMargin: agentConfig.minimumMargin,
+      }
     );
 
     this.setupMiddleware();
@@ -100,6 +110,35 @@ export class AgentServer {
       }
     });
 
+    // Evaluate endpoint - agent decides if bounty is worth it
+    this.app.post('/evaluate', (req: Request, res: Response) => {
+      try {
+        const body = req.body as EvaluateRequestBody;
+
+        if (!body.issue || body.bountyAmount === undefined) {
+          res.status(400).json({
+            error: 'Missing required fields: issue, bountyAmount',
+          });
+          return;
+        }
+
+        const evaluation = this.agent.evaluateTask(body.issue, body.bountyAmount);
+
+        console.log(
+          `[${this.agentConfig.id}] Evaluated issue #${body.issue.number}: ${evaluation.accept ? 'ACCEPT' : 'DECLINE'} - ${evaluation.reason}`
+        );
+
+        res.json({
+          agentId: this.agentConfig.id,
+          ...evaluation,
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[${this.agentConfig.id}] Error in /evaluate:`, errorMessage);
+        res.status(500).json({ error: errorMessage });
+      }
+    });
+
     // Info endpoint - returns agent configuration
     this.app.get('/info', (_req: Request, res: Response) => {
       res.json({
@@ -107,6 +146,11 @@ export class AgentServer {
         name: this.agentConfig.name,
         model: this.agentConfig.model,
         port: this.agentConfig.port,
+        economics: {
+          costPerToken: this.agentConfig.costPerToken,
+          avgTokensPerSolution: this.agentConfig.avgTokensPerSolution,
+          minimumMargin: this.agentConfig.minimumMargin,
+        },
       });
     });
   }

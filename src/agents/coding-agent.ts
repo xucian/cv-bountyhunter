@@ -1,12 +1,33 @@
 import type { ILLMService } from '../types/services.js';
-import type { Issue, Solution } from '../types/index.js';
+import type { Issue, Solution, AgentConfig, TaskEvaluation } from '../types/index.js';
 
 export class CodingAgent {
   constructor(
     private agentId: string,
     private model: string,
-    private llmService: ILLMService
+    private llmService: ILLMService,
+    private economics: Pick<AgentConfig, 'costPerToken' | 'avgTokensPerSolution' | 'minimumMargin'>
   ) {}
+
+  /**
+   * Evaluate whether this task is worth accepting at the given bounty
+   */
+  evaluateTask(issue: Issue, bountyAmount: number): TaskEvaluation {
+    const estimatedCost = this.economics.avgTokensPerSolution * this.economics.costPerToken;
+    const minPrice = estimatedCost * (1 + this.economics.minimumMargin);
+    const accept = bountyAmount >= minPrice;
+
+    const marginIfAccepted = ((bountyAmount - estimatedCost) / estimatedCost) * 100;
+
+    return {
+      accept,
+      minPrice,
+      estimatedCost,
+      reason: accept
+        ? `Accepting: $${bountyAmount.toFixed(4)} bounty, $${estimatedCost.toFixed(4)} cost, ${marginIfAccepted.toFixed(0)}% margin`
+        : `Declining: Need $${minPrice.toFixed(4)} min, offered $${bountyAmount.toFixed(4)} (${this.economics.minimumMargin * 100}% margin required)`,
+    };
+  }
 
   async solve(issue: Issue): Promise<Solution> {
     const startTime = Date.now();
