@@ -386,10 +386,10 @@ function CompletionDetails({ competition }: { competition: Competition }) {
     }
   };
 
-  // Auto-click PR button after 10 seconds
+  // Auto-click PR button after x seconds
   useEffect(() => {
     if (!prUrl && !creatingPR) {
-      const secsUntilAutoPR = 5;
+      const secsUntilAutoPR = 3;
       setCountdown(secsUntilAutoPR);
 
       const countdownInterval = setInterval(() => {

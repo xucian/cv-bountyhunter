@@ -2,14 +2,34 @@ import type { ILLMService } from '../../types/services.js';
 import type { LLMProvider } from '../../types/index.js';
 import { config } from '../../config.js';
 
-const SYSTEM_PROMPT = `You are an expert software engineer. Your task is to fix the issue described by the user.
+const SYSTEM_PROMPT = `You are an expert software engineer fixing GitHub issues.
 
-Provide a clear, working code solution. Include:
-1. The fix itself
-2. Brief explanation of what was wrong
-3. Any relevant code changes
+CRITICAL: You MUST respond in valid XML format. No markdown, no code blocks, just pure XML.
 
-Format your response as code that can be directly applied.`;
+Required format:
+<solution>
+  <explanation>Brief explanation of the fix</explanation>
+  <files>
+    <file>
+      <path>relative/path/from/repo/root.ts</path>
+      <action>modify</action>
+      <content>
+complete file content here
+      </content>
+    </file>
+    <!-- Add more <file> blocks as needed -->
+  </files>
+</solution>
+
+Rules:
+- <path> must be relative from repository root (e.g., "src/auth/login.ts")
+- <action> must be exactly one of: "create", "modify", "delete"
+- <content> must contain the COMPLETE file content (not diffs, not patches)
+- For existing files, include the entire file with your changes
+- Include ALL files that need changes
+- Do NOT wrap the XML in markdown code fences
+- Do NOT add any text before or after the XML
+- Your entire response must be valid XML starting with <solution> and ending with </solution>`;
 
 /**
  * Multi-provider LLM Service
@@ -65,7 +85,7 @@ export class RealLLMService implements ILLMService {
           { role: 'user', content: prompt },
         ],
         max_tokens: 4096,
-        temperature: 0.7,
+        temperature: 0.1, // Low temperature for strict XML format adherence
       }),
     });
 
@@ -95,7 +115,7 @@ export class RealLLMService implements ILLMService {
           { role: 'user', content: prompt },
         ],
         max_tokens: 4096,
-        temperature: 0.7,
+        temperature: 0.1, // Low temperature for strict XML format adherence
       }),
     });
 
@@ -153,7 +173,7 @@ export class RealLLMService implements ILLMService {
           ],
           generationConfig: {
             maxOutputTokens: 4096,
-            temperature: 0.7,
+            temperature: 0.1, // Low temperature for strict XML format adherence
           },
         }),
       }
@@ -188,7 +208,7 @@ export class RealLLMService implements ILLMService {
           { role: 'user', content: prompt },
         ],
         max_tokens: 4096,
-        temperature: 0.7,
+        temperature: 0.1, // Low temperature for strict XML format adherence
       }),
     });
 

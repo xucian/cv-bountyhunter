@@ -1,9 +1,15 @@
 import type { ILLMService, StreamCallback } from '../../types/services.js';
 import type { LLMProvider } from '../../types/index.js';
 
-// Different mock solutions for variety
+// Different mock solutions in proper XML format
 const MOCK_SOLUTIONS = [
-  `// Solution using functional approach
+  `<solution>
+  <explanation>Fixed the password sanitization to preserve special characters and added comprehensive credential validation.</explanation>
+  <files>
+    <file>
+      <path>src/auth/validators.ts</path>
+      <action>modify</action>
+      <content>
 export function sanitizePassword(password: string): string {
   // FIXED: Preserve special characters in passwords
   return password.trim();
@@ -14,8 +20,18 @@ export function validateCredentials(email: string, password: string): boolean {
   if (!emailRegex.test(email)) return false;
   if (password.length < 8) return false;
   return true;
-}`,
-  `// Solution with enhanced validation
+}
+      </content>
+    </file>
+  </files>
+</solution>`,
+  `<solution>
+  <explanation>Enhanced validation logic with stronger password requirements including uppercase, lowercase, and numbers.</explanation>
+  <files>
+    <file>
+      <path>src/utils/validation.ts</path>
+      <action>modify</action>
+      <content>
 function isValidEmail(email: string): boolean {
   return /^[\\w.-]+@[\\w.-]+\\.\\w+$/.test(email);
 }
@@ -31,8 +47,18 @@ function isStrongPassword(password: string): boolean {
 
 export function authenticate(email: string, password: string): boolean {
   return isValidEmail(email) && isStrongPassword(password);
-}`,
-  `// Object-oriented solution
+}
+      </content>
+    </file>
+  </files>
+</solution>`,
+  `<solution>
+  <explanation>Implemented object-oriented password validation with extensible error reporting.</explanation>
+  <files>
+    <file>
+      <path>src/auth/PasswordValidator.ts</path>
+      <action>create</action>
+      <content>
 class PasswordValidator {
   private minLength = 8;
 
@@ -48,7 +74,11 @@ class PasswordValidator {
   }
 }
 
-export const validator = new PasswordValidator();`,
+export const validator = new PasswordValidator();
+      </content>
+    </file>
+  </files>
+</solution>`,
 ];
 
 export class MockLLMService implements ILLMService {
@@ -64,9 +94,9 @@ export class MockLLMService implements ILLMService {
   ): Promise<string> {
     console.log(`[MockLLM] Streaming solution with model: ${model} (provider: ${provider || 'default'})`);
 
-    // Pick a random solution and add model info
+    // Pick a random solution (already in XML format)
     const solutionIndex = Math.floor(Math.random() * MOCK_SOLUTIONS.length);
-    const solution = `// Model: ${model}\n${MOCK_SOLUTIONS[solutionIndex]}`;
+    const solution = MOCK_SOLUTIONS[solutionIndex];
 
     // Stream character by character with small delays
     let accumulated = '';
@@ -81,7 +111,7 @@ export class MockLLMService implements ILLMService {
       await this.delay(10 + Math.random() * 20);
     }
 
-    console.log(`[MockLLM] Finished streaming ${solution.length} chars`);
+    console.log(`[MockLLM] Finished streaming ${solution.length} chars (XML format)`);
     return solution;
   }
 

@@ -97,9 +97,12 @@ export class RealGitHubService implements IGitHubService {
     const dirName = `${repo.replace('/', '-')}-${hash}`;
     const localPath = join(REPOS_DIR, dirName);
 
-    // Check if already cloned
+    // Check if already cloned and valid
     try {
       await access(localPath);
+
+      // Verify it's a valid git repository
+      await execAsync('git rev-parse --git-dir', { cwd: localPath });
       console.log(`[GitHub] Repository already cloned at: ${localPath}`);
 
       // Fetch latest changes
@@ -107,8 +110,15 @@ export class RealGitHubService implements IGitHubService {
       await execAsync('git fetch --all', { cwd: localPath });
 
       return localPath;
-    } catch {
-      // Directory doesn't exist, need to clone
+    } catch (error) {
+      // Directory doesn't exist or is not a valid git repo - clean it up
+      try {
+        await access(localPath);
+        console.log(`[GitHub] Invalid or corrupted repo detected, removing...`);
+        await execAsync(`rm -rf "${localPath}"`);
+      } catch {
+        // Directory doesn't exist, that's fine
+      }
     }
 
     console.log(`[GitHub] Cloning repository: ${repo}`);
@@ -207,6 +217,11 @@ export class RealGitHubService implements IGitHubService {
         labels: issue.labels?.map((l: any) => l.name) || [],
       }));
     } catch (error) {
+      // Check if issues are disabled
+      if (error instanceof Error && error.message.includes('has disabled issues')) {
+        console.log(`[GitHub] Repository ${repo} has issues disabled`);
+        return [];
+      }
       console.error('Failed to list issues:', error);
       return [];
     }
@@ -357,7 +372,7 @@ export class RealGitHubService implements IGitHubService {
       // Check if branch already exists (from previous attempt)
       try {
         await execAsync(`git rev-parse --verify ${branchName}`, { cwd: localPath });
-        console.log(`[GitHub] Branch ${branchName} already exists, deleting it...`);
+        console.log(`[GitHub] Branch ${branchName} already exists locally, deleting it...`);
 
         // Switch to default branch first
         try {
@@ -367,9 +382,26 @@ export class RealGitHubService implements IGitHubService {
           await execAsync(`git checkout -b ${defaultBranch} origin/${defaultBranch}`, { cwd: localPath });
         }
 
+        // Delete local branch
         await execAsync(`git branch -D ${branchName}`, { cwd: localPath });
+
+        // Delete remote branch if it exists (prevents non-fast-forward errors)
+        try {
+          await execAsync(`git ls-remote --exit-code --heads origin ${branchName}`, { cwd: localPath });
+          console.log(`[GitHub] Remote branch ${branchName} exists, deleting it...`);
+          await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
+        } catch {
+          // Remote branch doesn't exist, that's fine
+        }
       } catch {
-        // Branch doesn't exist, that's fine
+        // Local branch doesn't exist, check if remote exists anyway
+        try {
+          await execAsync(`git ls-remote --exit-code --heads origin ${branchName}`, { cwd: localPath });
+          console.log(`[GitHub] Remote branch ${branchName} exists without local, deleting it...`);
+          await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
+        } catch {
+          // Remote branch doesn't exist either, that's fine
+        }
       }
 
       // Create new branch from latest default branch

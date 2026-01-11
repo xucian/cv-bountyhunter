@@ -245,14 +245,14 @@ async queryRelevantCode(issue, limit) {
 
 ### Conflict #5: Temp Directory Clone Flow Undefined 🔴 CRITICAL
 
-**Problem**: Plan says "if not in git repo, clone to /tmp/xyz", but **implementation is unclear**. Who does the cloning?
+**Problem**: Plan says "if not in git repo, clone to /tmp/xyz", but who does the cloning?
 
 **Current Gap**:
 - **TUI** doesn't have git clone logic (just renders UI)
 - **Orchestrator** starts after user confirms, can't prompt
 - **Service factory** runs before TUI
 
-**Solution for Hackathon**: **Skip remote clone feature** - only support local repos
+**Solution for Hackathon** (user response): the ui does the cloning, and cd's there, and it'll enter the same exact state as if we'd already been in a cloned repo (code should be aware of this -- but i hope we already have all of the .env files also present in memory so cd-ing won't clear them). this part doesn't have to be tested at the end of the implementation, but ideally it shold work.
 
 **Simplified Flow**:
 1. User must `cd` into repo before running `npm run dev:tui`
@@ -1190,7 +1190,7 @@ Before merging, confirm with teammates:
 | Code cleanup & comments | 15 min | Low |
 | **Total** | **~4.5h** | |
 
-**Hackathon strategy**: Aim for 3h core implementation, 1h buffer for debugging.
+**Hackathon strategy**: Aim for 3h core implementation, 1h buffer for debugging. (update it: we need it much faster, you're claude code!)
 
 ---
 

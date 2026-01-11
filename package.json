@@ -5,6 +5,7 @@
   "scripts": {
     "tui": "tsx src/tui/index.tsx",
     "ws": "tsx src/ws-server.ts",
+    "ws:watch": "tsx watch src/ws-server.ts",
     "web": "cd web && bun run dev",
     "web:build": "cd web && bun run build",
     "dev:tui": "tsx src/tui/index.tsx",
