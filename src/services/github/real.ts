@@ -369,44 +369,51 @@ export class RealGitHubService implements IGitHubService {
 
       console.log(`[GitHub] Using default branch: ${defaultBranch}`);
 
-      // Check if branch already exists (from previous attempt)
+      // ALWAYS ensure we're on the default branch first (can't delete a branch we're on)
+      console.log(`[GitHub] Switching to ${defaultBranch}...`);
       try {
-        await execAsync(`git rev-parse --verify ${branchName}`, { cwd: localPath });
-        console.log(`[GitHub] Branch ${branchName} already exists locally, deleting it...`);
-
-        // Switch to default branch first
-        try {
-          await execAsync(`git checkout ${defaultBranch}`, { cwd: localPath });
-        } catch {
-          // If local branch doesn't exist, create it from remote
-          await execAsync(`git checkout -b ${defaultBranch} origin/${defaultBranch}`, { cwd: localPath });
-        }
-
-        // Delete local branch
-        await execAsync(`git branch -D ${branchName}`, { cwd: localPath });
-
-        // Delete remote branch if it exists (prevents non-fast-forward errors)
-        try {
-          await execAsync(`git ls-remote --exit-code --heads origin ${branchName}`, { cwd: localPath });
-          console.log(`[GitHub] Remote branch ${branchName} exists, deleting it...`);
-          await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
-        } catch {
-          // Remote branch doesn't exist, that's fine
-        }
+        // Try to checkout existing local default branch
+        await execAsync(`git checkout ${defaultBranch}`, { cwd: localPath });
       } catch {
-        // Local branch doesn't exist, check if remote exists anyway
+        // If it doesn't exist locally, create it from remote
         try {
-          await execAsync(`git ls-remote --exit-code --heads origin ${branchName}`, { cwd: localPath });
-          console.log(`[GitHub] Remote branch ${branchName} exists without local, deleting it...`);
-          await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
+          await execAsync(`git checkout -b ${defaultBranch} origin/${defaultBranch}`, { cwd: localPath });
         } catch {
-          // Remote branch doesn't exist either, that's fine
+          // Last resort: detach HEAD to a safe state
+          await execAsync(`git checkout --detach`, { cwd: localPath });
         }
       }
 
+      // Force delete local branch if it exists
+      console.log(`[GitHub] Cleaning up any existing ${branchName} branch...`);
+      try {
+        await execAsync(`git branch -D ${branchName}`, { cwd: localPath });
+        console.log(`[GitHub] Deleted local branch ${branchName}`);
+      } catch (e) {
+        // Branch doesn't exist locally, that's fine
+        console.log(`[GitHub] No local branch ${branchName} to delete`);
+      }
+
+      // Delete remote branch if it exists (prevents non-fast-forward errors)
+      try {
+        await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
+        console.log(`[GitHub] Deleted remote branch ${branchName}`);
+      } catch (e) {
+        // Remote branch doesn't exist, that's fine
+        console.log(`[GitHub] No remote branch ${branchName} to delete`);
+      }
+
+      // Pull latest changes to default branch
+      console.log(`[GitHub] Pulling latest changes...`);
+      try {
+        await execAsync(`git pull origin ${defaultBranch}`, { cwd: localPath });
+      } catch {
+        // Pull might fail if there's no tracking, ignore
+      }
+
       // Create new branch from latest default branch
-      console.log(`[GitHub] Creating branch ${branchName} from origin/${defaultBranch}...`);
-      await execAsync(`git checkout -b ${branchName} origin/${defaultBranch}`, { cwd: localPath });
+      console.log(`[GitHub] Creating fresh branch ${branchName} from ${defaultBranch}...`);
+      await execAsync(`git checkout -b ${branchName}`, { cwd: localPath });
 
       // Apply file changes if available, otherwise fall back to old behavior
       if (solution.fileChanges && solution.fileChanges.length > 0) {
