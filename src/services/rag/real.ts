@@ -64,27 +64,43 @@ interface CodeChunkDocument {
  * Implements AST-based code chunking and vector search
  */
 export class RealRAGService implements IRAGService {
-  private voyageClient: VoyageAIClient;
+  private voyageClient: VoyageAIClient | null = null;
   private db: Db | null = null;
   private chunksCollection: Collection<CodeChunkDocument> | null = null;
   private connected = false;
+  private configError: string | null = null;
 
   constructor() {
-    if (!config.voyage.apiKey) {
-      throw new Error('VOYAGE_API_KEY not configured');
+    if (!config.voyage?.apiKey) {
+      this.configError = 'VOYAGE_API_KEY not configured';
+      console.warn(`[RealRAG] Warning: ${this.configError}`);
+      return;
     }
 
-    if (!config.mongodb.uri) {
-      throw new Error('MONGODB_URI not configured');
+    if (!config.mongodb?.uri) {
+      this.configError = 'MONGODB_URI not configured';
+      console.warn(`[RealRAG] Warning: ${this.configError}`);
+      return;
     }
 
     this.voyageClient = new VoyageAIClient({ apiKey: config.voyage.apiKey });
   }
 
   /**
+   * Check if RAG is properly configured
+   */
+  private checkConfig(): void {
+    if (this.configError) {
+      throw new Error(`RealRAG not available: ${this.configError}`);
+    }
+  }
+
+  /**
    * Connect to MongoDB Atlas using shared client
    */
   private async connect(): Promise<void> {
+    this.checkConfig();
+
     if (this.connected && this.db && this.chunksCollection) {
       return;
     }
@@ -166,7 +182,7 @@ export class RealRAGService implements IRAGService {
       onProgress?.('embedding', `Embedding batch ${batchNum}/${totalBatches}...`, batchNum, totalBatches);
 
       try {
-        const response = await this.voyageClient.embed({
+        const response = await this.voyageClient!.embed({
           input: texts,
           model: config.voyage.model,
         });
@@ -216,7 +232,7 @@ export class RealRAGService implements IRAGService {
     try {
       // Generate query embedding
       onProgress?.('querying', `Generating query embedding...`);
-      const response = await this.voyageClient.embed({
+      const response = await this.voyageClient!.embed({
         input: [queryText],
         model: config.voyage.model,
       });
