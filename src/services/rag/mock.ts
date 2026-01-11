@@ -1,22 +1,48 @@
-import type { IRAGService, CodeChunk } from '../../types/services.js';
+import type { IRAGService, CodeChunk, RAGProgressCallback } from '../../types/services.js';
 import type { Issue } from '../../types/index.js';
 
 /**
  * Mock RAG service for development and testing
- * Simulates code indexing and retrieval without external dependencies
+ * Simulates code indexing and retrieval with progress streaming
  */
 export class MockRAGService implements IRAGService {
   private indexedRepos = new Map<string, string>(); // repoUrl -> commitId
 
-  async indexRepo(repoPath: string, repoUrl: string): Promise<{ commitId: string; chunksIndexed: number }> {
+  async indexRepo(
+    repoPath: string,
+    repoUrl: string,
+    onProgress?: RAGProgressCallback
+  ): Promise<{ commitId: string; chunksIndexed: number }> {
     console.log(`[MockRAG] Indexing repo at ${repoPath}`);
-    console.log(`[MockRAG] Repo URL: ${repoUrl}`);
-
-    // Simulate indexing delay
-    await this.delay(1000);
 
     const mockCommitId = 'abc123mock';
-    const mockChunkCount = Math.floor(Math.random() * 50) + 20; // 20-70 chunks
+    const mockFileCount = Math.floor(Math.random() * 30) + 15; // 15-45 files
+    const mockChunkCount = Math.floor(Math.random() * 50) + 30; // 30-80 chunks
+
+    // Stage 1: Scanning
+    onProgress?.('scanning', `Scanning repository ${repoUrl}...`);
+    await this.delay(300);
+    onProgress?.('scanning', `Found ${mockFileCount} source files (.ts, .tsx, .js, .jsx)`);
+    await this.delay(200);
+
+    // Stage 2: Parsing
+    onProgress?.('parsing', `Parsing source files...`);
+    for (let i = 0; i < mockFileCount; i += Math.ceil(mockFileCount / 5)) {
+      await this.delay(100);
+      onProgress?.('parsing', `Parsing files...`, Math.min(i + Math.ceil(mockFileCount / 5), mockFileCount), mockFileCount);
+    }
+    onProgress?.('parsing', `Extracted ${mockChunkCount} code chunks (functions, classes, methods)`);
+    await this.delay(200);
+
+    // Stage 3: Embedding
+    const batchCount = Math.ceil(mockChunkCount / 20);
+    onProgress?.('embedding', `Generating embeddings for ${mockChunkCount} chunks...`);
+    for (let i = 0; i < batchCount; i++) {
+      await this.delay(150);
+      onProgress?.('embedding', `Embedding batch ${i + 1}/${batchCount}...`, i + 1, batchCount);
+    }
+    onProgress?.('embedding', `Embeddings complete. Stored in vector database.`);
+    await this.delay(200);
 
     this.indexedRepos.set(repoUrl, mockCommitId);
 
@@ -24,12 +50,20 @@ export class MockRAGService implements IRAGService {
     return { commitId: mockCommitId, chunksIndexed: mockChunkCount };
   }
 
-  async queryRelevantCode(issue: Issue, limit = 10): Promise<CodeChunk[]> {
+  async queryRelevantCode(
+    issue: Issue,
+    limit = 10,
+    onProgress?: RAGProgressCallback
+  ): Promise<CodeChunk[]> {
     console.log(`[MockRAG] Querying relevant code for issue #${issue.number}`);
-    console.log(`[MockRAG] Issue title: ${issue.title}`);
 
-    // Simulate query delay
-    await this.delay(500);
+    // Stage: Querying
+    onProgress?.('querying', `Searching for code relevant to: "${issue.title.slice(0, 50)}..."`);
+    await this.delay(200);
+    onProgress?.('querying', `Generating query embedding...`);
+    await this.delay(300);
+    onProgress?.('querying', `Running vector similarity search...`);
+    await this.delay(200);
 
     // Generate mock chunks
     const chunks: CodeChunk[] = [];
@@ -40,11 +74,20 @@ export class MockRAGService implements IRAGService {
         filePath: `src/services/user-${i}.ts`,
         chunkType: i % 3 === 0 ? 'function' : i % 3 === 1 ? 'class' : 'method',
         chunkName: i % 3 === 0 ? `handleLogin${i}` : i % 3 === 1 ? `UserService${i}` : `authenticate${i}`,
-        code: `// Mock code chunk ${i + 1}\nfunction example${i}() {\n  // Relevant to: ${issue.title.slice(0, 30)}\n  return true;\n}`,
-        score: 0.9 - i * 0.1, // Decreasing relevance scores
+        code: `// Relevant code chunk ${i + 1}
+function example${i}() {
+  // This code is relevant to: ${issue.title.slice(0, 30)}
+  const result = processInput();
+  if (!result) {
+    throw new Error('Invalid input');
+  }
+  return result;
+}`,
+        score: 0.95 - i * 0.08, // Decreasing relevance scores
       });
     }
 
+    onProgress?.('querying', `Found ${chunks.length} relevant code chunks`);
     console.log(`[MockRAG] Found ${chunks.length} relevant chunks`);
     return chunks;
   }

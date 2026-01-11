@@ -73,15 +73,24 @@ export interface IReviewerService {
   ): Promise<ReviewResult>;
 }
 
+// RAG progress callback for streaming progress updates
+export type RAGProgressCallback = (
+  stage: 'scanning' | 'parsing' | 'embedding' | 'querying',
+  message: string,
+  current?: number,
+  total?: number
+) => void;
+
 // RAG (Retrieval-Augmented Generation) service for code indexing and search
 export interface IRAGService {
   /**
    * Index a local repository into MongoDB Atlas
    * @param repoPath - Local filesystem path to repo (e.g., "/Users/me/project")
    * @param repoUrl - GitHub URL (e.g., "https://github.com/owner/repo")
+   * @param onProgress - Optional callback for progress updates
    * @returns Commit ID and number of chunks indexed
    */
-  indexRepo(repoPath: string, repoUrl: string): Promise<{
+  indexRepo(repoPath: string, repoUrl: string, onProgress?: RAGProgressCallback): Promise<{
     commitId: string;
     chunksIndexed: number;
   }>;
@@ -90,9 +99,10 @@ export interface IRAGService {
    * Query relevant code chunks for an issue
    * @param issue - The GitHub issue to find relevant code for
    * @param limit - Max number of chunks to return (default: 10)
+   * @param onProgress - Optional callback for progress updates
    * @returns Array of relevant code chunks, sorted by relevance score
    */
-  queryRelevantCode(issue: Issue, limit?: number): Promise<CodeChunk[]>;
+  queryRelevantCode(issue: Issue, limit?: number, onProgress?: RAGProgressCallback): Promise<CodeChunk[]>;
 
   /**
    * Check if a repo is already indexed
