@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AgentCard } from './AgentCard';
 import { cn } from '@/lib/utils';
 import type { Competition } from '@/lib/services';
@@ -352,10 +352,18 @@ function CompletionDetails({ competition }: { competition: Competition }) {
   const [prUrl, setPrUrl] = useState<string | null>(null);
   const [prError, setPrError] = useState<string | null>(null);
   const [codeOnly, setCodeOnly] = useState(false);
+  const [countdown, setCountdown] = useState(10);
+  const autoClickTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleCreatePR = async () => {
     setCreatingPR(true);
     setPrError(null);
+
+    // Clear auto-click timer if it's running
+    if (autoClickTimerRef.current) {
+      clearInterval(autoClickTimerRef.current);
+      autoClickTimerRef.current = null;
+    }
 
     try {
       const res = await fetch(`/api/competitions/${competition.id}/pr`, {
@@ -377,6 +385,31 @@ function CompletionDetails({ competition }: { competition: Competition }) {
       setCreatingPR(false);
     }
   };
+
+  // Auto-click PR button after 10 seconds
+  useEffect(() => {
+    if (!prUrl && !creatingPR) {
+      const secsUntilAutoPR = 5;
+      setCountdown(secsUntilAutoPR);
+
+      const countdownInterval = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            handleCreatePR();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      autoClickTimerRef.current = countdownInterval;
+
+      return () => {
+        clearInterval(countdownInterval);
+      };
+    }
+  }, [prUrl, creatingPR]);
 
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
@@ -506,7 +539,11 @@ function CompletionDetails({ competition }: { competition: Competition }) {
                 ) : (
                   <>
                     <GitPullRequest className="w-4 h-4" />
-                    Create PR from Solution
+                    {countdown > 0 ? (
+                      <span>Create PR from Solution ({countdown}s)</span>
+                    ) : (
+                      <span>Create PR from Solution</span>
+                    )}
                   </>
                 )}
               </button>
