@@ -373,77 +373,33 @@ export class RealGitHubService implements IGitHubService {
 
       console.log(`[GitHub] Using default branch: ${defaultBranch}`);
 
-      // ALWAYS ensure we're on the default branch first (can't delete a branch we're on)
-      console.log(`[GitHub] Switching to ${defaultBranch}...`);
+      // Ensure we're on the default branch and it's up to date
+      console.log(`[GitHub] Switching to ${defaultBranch} and pulling latest...`);
       try {
-        // Try to checkout existing local default branch
         await execAsync(`git checkout ${defaultBranch}`, { cwd: localPath });
       } catch {
-        // If it doesn't exist locally, create it from remote
-        try {
-          await execAsync(`git checkout -b ${defaultBranch} origin/${defaultBranch}`, { cwd: localPath });
-        } catch {
-          // Last resort: detach HEAD to a safe state
-          await execAsync(`git checkout --detach`, { cwd: localPath });
-        }
+        // If local branch doesn't exist, create from remote
+        await execAsync(`git checkout -b ${defaultBranch} origin/${defaultBranch}`, { cwd: localPath });
       }
 
-      // Aggressively clean up local branch with multiple methods
-      console.log(`[GitHub] Cleaning up any existing ${branchName} branch...`);
-
-      // Method 1: Standard branch delete
-      try {
-        await execAsync(`git branch -D ${branchName}`, { cwd: localPath });
-        console.log(`[GitHub] Deleted local branch ${branchName} (method 1)`);
-      } catch {
-        // Method 2: Use update-ref to force delete the ref
-        try {
-          await execAsync(`git update-ref -d refs/heads/${branchName}`, { cwd: localPath });
-          console.log(`[GitHub] Deleted local branch ${branchName} (method 2: update-ref)`);
-        } catch {
-          // Method 3: Remove stale lock files and packed-refs entries
-          try {
-            // Remove any lock files
-            await execAsync(`rm -f .git/refs/heads/${branchName}.lock`, { cwd: localPath });
-            // Try branch delete again
-            await execAsync(`git branch -D ${branchName}`, { cwd: localPath }).catch(() => {
-              // Method 4: Manually remove the ref file
-              execAsync(`rm -f .git/refs/heads/${branchName}`, { cwd: localPath }).catch(() => {});
-            });
-            console.log(`[GitHub] Cleaned up local branch ${branchName} (method 3: manual cleanup)`);
-          } catch {
-            console.log(`[GitHub] No local branch ${branchName} found or already cleaned`);
-          }
-        }
-      }
-
-      // Pack refs to clean up loose refs
-      try {
-        await execAsync(`git pack-refs --all`, { cwd: localPath });
-      } catch {
-        // Ignore pack-refs failures
-      }
-
-      // Delete remote branch if it exists (prevents non-fast-forward errors)
-      try {
-        await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
-        console.log(`[GitHub] Deleted remote branch ${branchName}`);
-      } catch (e) {
-        // Remote branch doesn't exist or already deleted
-        console.log(`[GitHub] No remote branch ${branchName} to delete`);
-      }
-
-      // Pull latest changes to default branch
-      console.log(`[GitHub] Pulling latest changes...`);
+      // Pull latest changes
       try {
         await execAsync(`git pull origin ${defaultBranch}`, { cwd: localPath });
       } catch {
-        // Pull might fail if there's no tracking, ignore
+        // Pull might fail if no tracking, ignore
       }
 
-      // Create new branch from latest default branch
-      console.log(`[GitHub] Creating fresh branch ${branchName} from ${defaultBranch}...`);
-      await execAsync(`git checkout -b ${branchName}`, { cwd: localPath });
+      // Delete remote branch if it exists (prevents push conflicts later)
+      try {
+        await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
+        console.log(`[GitHub] Deleted remote branch ${branchName}`);
+      } catch {
+        // Remote branch doesn't exist, that's fine
+      }
+
+      // Force create/reset branch - this is idempotent and always works
+      console.log(`[GitHub] Creating branch ${branchName}...`);
+      await execAsync(`git checkout -B ${branchName}`, { cwd: localPath });
 
       // Apply file changes if available, otherwise fall back to old behavior
       if (solution.fileChanges && solution.fileChanges.length > 0) {
