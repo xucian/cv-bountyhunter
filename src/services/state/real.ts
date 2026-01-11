@@ -3,46 +3,38 @@
  * Persists competitions and payment records to MongoDB
  */
 
-import { MongoClient, type Db, type Collection } from 'mongodb';
+import { type Db, type Collection } from 'mongodb';
 import type { IStateStore } from '../../types/services.js';
 import type { Competition, PaymentRecord, AgentStatus } from '../../types/index.js';
-import { config } from '../../config.js';
+import { SharedMongoClient } from '../mongodb-client.js';
 
 export class RealStateStore implements IStateStore {
-  private client: MongoClient | null = null;
   private db: Db | null = null;
   private competitions: Collection<Competition> | null = null;
   private payments: Collection<PaymentRecord> | null = null;
   private connected = false;
 
-  constructor(private uri?: string) {
-    this.uri = uri || config.mongodb.uri;
-  }
-
   /**
-   * Connect to MongoDB
+   * Connect to MongoDB using shared client
    */
   async connect(): Promise<void> {
     if (this.connected) return;
 
-    if (!this.uri) {
-      throw new Error('MongoDB URI not configured. Set MONGODB_URI environment variable.');
+    try {
+      const { db } = await SharedMongoClient.getClient();
+      this.db = db;
+      this.competitions = this.db.collection<Competition>('competitions');
+      this.payments = this.db.collection<PaymentRecord>('payments');
+
+      // Create indexes
+      await this.createIndexes();
+
+      this.connected = true;
+      console.log('[StateStore] ✓ Connected to MongoDB');
+    } catch (error) {
+      console.error('[StateStore] ✗ Failed to connect:', error);
+      throw error;
     }
-
-    console.log('[MongoDB] Connecting to database...');
-
-    this.client = new MongoClient(this.uri);
-    await this.client.connect();
-
-    this.db = this.client.db('codebounty');
-    this.competitions = this.db.collection<Competition>('competitions');
-    this.payments = this.db.collection<PaymentRecord>('payments');
-
-    // Create indexes
-    await this.createIndexes();
-
-    this.connected = true;
-    console.log('[MongoDB] Connected successfully');
   }
 
   /**
@@ -75,14 +67,11 @@ export class RealStateStore implements IStateStore {
   }
 
   /**
-   * Disconnect from MongoDB
+   * Disconnect from MongoDB (uses shared client, so just mark as disconnected)
    */
   async disconnect(): Promise<void> {
-    if (this.client) {
-      await this.client.close();
-      this.connected = false;
-      console.log('[MongoDB] Disconnected');
-    }
+    this.connected = false;
+    console.log('[StateStore] Disconnected');
   }
 
   // ==================== Competition Methods ====================

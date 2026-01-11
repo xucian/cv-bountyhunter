@@ -39,12 +39,14 @@ function writeToFile(level: string, message: string, ...args: any[]): void {
     : message;
 
   const line = `[${formatTimestamp()}] [${level}] ${formatted}\n`;
-  const stream = getLogStream();
-  stream.write(line);
-  // Ensure critical logs are flushed immediately
-  if (level === 'ERROR' || level === 'WARN') {
-    stream.cork();
-    process.nextTick(() => stream.uncork());
+
+  // Write synchronously to ensure logs appear immediately (no buffering)
+  try {
+    fs.appendFileSync(LOG_FILE, line);
+  } catch (err) {
+    // If sync write fails, try stream as fallback
+    const stream = getLogStream();
+    stream.write(line);
   }
 }
 
@@ -78,20 +80,35 @@ export function enableFileLogging(): void {
   const originalError = console.error;
   const originalWarn = console.warn;
 
+  // Check if we're in debug mode
+  const TUI_DEBUG_MODE = process.env.TUI_DEBUG_MODE === 'true';
+
   console.log = function(message?: any, ...args: any[]) {
     writeToFile('INFO', String(message ?? ''), ...args);
-    // Don't call original - would interfere with Ink TUI
+    // In debug mode, also show on stdout; otherwise write to stderr to avoid TUI conflicts
+    if (TUI_DEBUG_MODE) {
+      originalLog(message, ...args);
+    } else {
+      process.stderr.write(`[INFO] ${message} ${args.join(' ')}\n`);
+    }
   };
 
   console.error = function(message?: any, ...args: any[]) {
     writeToFile('ERROR', String(message ?? ''), ...args);
-    // Don't write to stderr - would interfere with Ink TUI
-    // All errors are in the log file
+    if (TUI_DEBUG_MODE) {
+      originalError(message, ...args);
+    } else {
+      process.stderr.write(`[ERROR] ${message} ${args.join(' ')}\n`);
+    }
   };
 
   console.warn = function(message?: any, ...args: any[]) {
     writeToFile('WARN', String(message ?? ''), ...args);
-    // Don't call original - would interfere with Ink TUI
+    if (TUI_DEBUG_MODE) {
+      originalWarn(message, ...args);
+    } else {
+      process.stderr.write(`[WARN] ${message} ${args.join(' ')}\n`);
+    }
   };
 
   // Log startup

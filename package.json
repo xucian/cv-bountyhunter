@@ -13,7 +13,8 @@
     "test:x402": "tsx scripts/test-x402-flow.ts",
     "test:rag": "tsx scripts/test-rag.ts",
     "typecheck": "tsc --noEmit",
-    "setup:wallets": "tsx scripts/setup-wallets.ts"
+    "setup:wallets": "tsx scripts/setup-wallets.ts",
+    "logs": "./scripts/watch-logs.sh"
   },
   "dependencies": {
     "@babel/parser": "^7.28.5",

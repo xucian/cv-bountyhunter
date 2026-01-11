@@ -7,7 +7,7 @@ import type { IGitHubService } from '../../types/services.js';
 
 interface MainMenuProps {
   githubService: IGitHubService;
-  onStartCompetition: (issue: Issue) => void;
+  onStartCompetition: (issue: Issue) => void | Promise<void>;
   onViewHistory?: () => void;
   onViewLeaderboard?: () => void;
 }
@@ -75,13 +75,18 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
 
     setIsLoading(true);
     try {
+      console.log('[MainMenu] Creating new issue:', newIssueTitle);
       const issue = await githubService.createIssue(
         repoUrl,
         newIssueTitle.trim(),
         newIssueBody.trim() || 'Created via CodeBounty'
       );
+      console.log('[MainMenu] Issue created:', issue.number);
+      console.log('[MainMenu] Calling onStartCompetition for new issue...');
       onStartCompetition(issue);
+      console.log('[MainMenu] onStartCompetition called for new issue');
     } catch (err) {
+      console.error('[MainMenu] Failed to create issue:', err);
       setError('Failed to create issue');
     } finally {
       setIsLoading(false);
@@ -106,7 +111,10 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
           setScreen('create-issue');
           setSelectedIndex(0);
         } else if (issues[selectedIndex]) {
+          console.log('[MainMenu] User selected issue:', issues[selectedIndex].number);
+          console.log('[MainMenu] Calling onStartCompetition...');
           onStartCompetition(issues[selectedIndex]);
+          console.log('[MainMenu] onStartCompetition called');
         }
       } else if (input === 'r' || input === 'R') {
         setScreen('repo');

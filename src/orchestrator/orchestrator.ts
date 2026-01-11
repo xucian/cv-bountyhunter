@@ -12,8 +12,16 @@ export class Orchestrator {
    * Fetches issue, indexes repo, creates competition, runs agents, picks winner, pays them
    */
   async startCompetition(repoUrl: string, issueNumber: number): Promise<Competition> {
+    console.log('[Orchestrator] ========================================');
+    console.log('[Orchestrator] START COMPETITION CALLED');
+    console.log('[Orchestrator] Repo:', repoUrl);
+    console.log('[Orchestrator] Issue #:', issueNumber);
+    console.log('[Orchestrator] ========================================');
+
     // 1. Fetch issue from GitHub
+    console.log('[Orchestrator] Fetching issue from GitHub...');
     const issue = await this.services.github.getIssue(repoUrl, issueNumber);
+    console.log('[Orchestrator] Issue fetched:', issue.title);
 
     // 2. Index repository FIRST (fail fast pattern - if indexing fails, no competition is created)
     const currentDir = process.cwd();

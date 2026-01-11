@@ -1,10 +1,11 @@
-import { MongoClient, Collection, Db } from 'mongodb';
+import { Collection, Db } from 'mongodb';
 import * as parser from '@babel/parser';
 import _traverse from '@babel/traverse';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { config } from '../../config.js';
+import { SharedMongoClient } from '../mongodb-client.js';
 import type { IRAGService, CodeChunk } from '../../types/services.js';
 import type { Issue } from '../../types/index.js';
 
@@ -63,7 +64,6 @@ interface CodeChunkDocument {
  * Implements AST-based code chunking and vector search
  */
 export class RealRAGService implements IRAGService {
-  private mongoClient: MongoClient | null = null;
   private voyageClient: VoyageAIClient;
   private db: Db | null = null;
   private chunksCollection: Collection<CodeChunkDocument> | null = null;
@@ -82,22 +82,21 @@ export class RealRAGService implements IRAGService {
   }
 
   /**
-   * Connect to MongoDB Atlas
+   * Connect to MongoDB Atlas using shared client
    */
   private async connect(): Promise<void> {
-    if (this.connected && this.mongoClient && this.db && this.chunksCollection) {
+    if (this.connected && this.db && this.chunksCollection) {
       return;
     }
 
     try {
-      this.mongoClient = new MongoClient(config.mongodb.uri);
-      await this.mongoClient.connect();
-      this.db = this.mongoClient.db(config.mongodb.dbName);
+      const { db } = await SharedMongoClient.getClient();
+      this.db = db;
       this.chunksCollection = this.db.collection<CodeChunkDocument>(config.mongodb.collections.chunks);
       this.connected = true;
-      console.log('[RealRAG] Connected to MongoDB Atlas');
+      console.log('[RealRAG] ✓ Connected to MongoDB');
     } catch (error) {
-      console.error('[RealRAG] Failed to connect to MongoDB:', error);
+      console.error('[RealRAG] ✗ Failed to connect:', error);
       throw error;
     }
   }

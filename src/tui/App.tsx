@@ -42,10 +42,14 @@ export function App() {
   // Handle starting a new competition with an Issue
   const handleStartCompetition = useCallback(
     async (issue: Issue) => {
+      console.log('[TUI] ========================================');
+      console.log('[TUI] handleStartCompetition INVOKED');
+      console.log('[TUI] Issue:', issue.repoUrl, '#', issue.number);
+      console.log('[TUI] ========================================');
       try {
-        console.log('[TUI] Starting competition via Orchestrator...');
-        console.log('[TUI] Issue:', issue.repoUrl, '#', issue.number);
+        console.log('[TUI] Setting view to competition...');
         setCurrentView('competition');
+        console.log('[TUI] Starting competition via Orchestrator...');
 
         // Call orchestrator which handles:
         // 1. RAG indexing
