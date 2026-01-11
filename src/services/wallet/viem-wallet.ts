@@ -109,6 +109,17 @@ export class ViemWalletService implements IWalletService {
     console.log(`[ViemWallet] Sending ${amount} USDC to ${to}`);
 
     try {
+      // Check ETH balance for gas
+      const ethBalance = await this.getEthBalance();
+      console.log(`[ViemWallet] ETH balance for gas: ${ethBalance.toFixed(6)} ETH`);
+
+      if (ethBalance < 0.0001) {
+        throw new Error(
+          `Insufficient ETH for gas: ${ethBalance} ETH. ` +
+          `Fund ${this.account.address} with ETH on ${this.chain.name}`
+        );
+      }
+
       // Convert amount to USDC units (6 decimals)
       const amountInUnits = parseUnits(amount.toString(), 6);
 
@@ -129,8 +140,12 @@ export class ViemWalletService implements IWalletService {
 
       console.log(`[ViemWallet] Transaction sent: ${hash}`);
 
-      // Wait for confirmation
-      const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+      // Wait for confirmation with timeout
+      console.log(`[ViemWallet] Waiting for confirmation (60s timeout)...`);
+      const receipt = await this.publicClient.waitForTransactionReceipt({
+        hash,
+        timeout: 60_000, // 60 second timeout
+      });
 
       if (receipt.status === 'success') {
         console.log(`[ViemWallet] Transaction confirmed in block ${receipt.blockNumber}`);
@@ -158,8 +173,12 @@ export class ViemWalletService implements IWalletService {
 
       console.log(`[ViemWallet] Transaction sent: ${hash}`);
 
-      // Wait for confirmation
-      const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+      // Wait for confirmation with timeout
+      console.log(`[ViemWallet] Waiting for confirmation (60s timeout)...`);
+      const receipt = await this.publicClient.waitForTransactionReceipt({
+        hash,
+        timeout: 60_000, // 60 second timeout
+      });
 
       if (receipt.status === 'success') {
         console.log(`[ViemWallet] Transaction confirmed in block ${receipt.blockNumber}`);

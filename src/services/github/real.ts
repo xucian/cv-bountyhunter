@@ -1,8 +1,9 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, writeFile, mkdir, access } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
+import { createHash } from 'crypto';
 import type { IGitHubService } from '../../types/services.js';
 import type { Issue, Solution } from '../../types/index.js';
 
@@ -10,6 +11,7 @@ const execAsync = promisify(exec);
 
 const CONFIG_DIR = join(homedir(), '.codebounty');
 const RECENT_REPOS_FILE = join(CONFIG_DIR, 'recent-repos.json');
+const REPOS_DIR = join(CONFIG_DIR, 'repos');
 
 export class RealGitHubService implements IGitHubService {
   /**
@@ -78,6 +80,109 @@ export class RealGitHubService implements IGitHubService {
       await writeFile(RECENT_REPOS_FILE, JSON.stringify(updated, null, 2));
     } catch (error) {
       console.error('Failed to save recent repos:', error);
+    }
+  }
+
+  /**
+   * Ensure a repository is cloned locally.
+   * - Uses gh repo fork --clone to clone (and fork if needed)
+   * - Stores clones in ~/.codebounty/repos/{owner}-{repo}-{hash}/
+   * - Returns the local path to the cloned repository
+   */
+  private async ensureRepoCloned(repoUrl: string): Promise<string> {
+    const repo = this.extractRepoPath(repoUrl);
+
+    // Create unique directory name: owner-repo-{8-char-hash}
+    const hash = createHash('sha256').update(repoUrl).digest('hex').slice(0, 8);
+    const dirName = `${repo.replace('/', '-')}-${hash}`;
+    const localPath = join(REPOS_DIR, dirName);
+
+    // Check if already cloned
+    try {
+      await access(localPath);
+      console.log(`[GitHub] Repository already cloned at: ${localPath}`);
+
+      // Fetch latest changes
+      console.log(`[GitHub] Fetching latest changes...`);
+      await execAsync('git fetch --all', { cwd: localPath });
+
+      return localPath;
+    } catch {
+      // Directory doesn't exist, need to clone
+    }
+
+    console.log(`[GitHub] Cloning repository: ${repo}`);
+    await mkdir(REPOS_DIR, { recursive: true });
+
+    try {
+      // Try to check if we have write access
+      let needsFork = false;
+      try {
+        const { stdout } = await execAsync(`gh repo view ${repo} --json viewerPermission -q .viewerPermission`);
+        const permission = stdout.trim();
+        needsFork = !['ADMIN', 'WRITE', 'MAINTAIN'].includes(permission);
+        console.log(`[GitHub] Repository permission: ${permission} (needs fork: ${needsFork})`);
+      } catch {
+        // If we can't check permissions, assume we need to fork
+        needsFork = true;
+        console.log(`[GitHub] Could not check permissions, assuming fork is needed`);
+      }
+
+      if (needsFork) {
+        // Get our username to construct the fork name
+        const { stdout: username } = await execAsync('gh api user -q .login');
+        const forkRepo = `${username.trim()}/${repo.split('/')[1]}`;
+
+        // Check if fork already exists
+        let forkExists = false;
+        try {
+          await execAsync(`gh repo view ${forkRepo} --json name`);
+          forkExists = true;
+          console.log(`[GitHub] Fork already exists: ${forkRepo}`);
+        } catch {
+          // Fork doesn't exist, need to create it
+        }
+
+        if (!forkExists) {
+          // Create fork
+          console.log(`[GitHub] Creating fork of ${repo}...`);
+          await execAsync(`gh repo fork ${repo} --clone=false`);
+          console.log(`[GitHub] ✓ Fork created: ${forkRepo}`);
+        }
+
+        // Clone the fork using HTTPS URL directly
+        console.log(`[GitHub] Cloning fork to: ${localPath}`);
+        const forkUrl = `https://github.com/${forkRepo}.git`;
+        await execAsync(`git clone "${forkUrl}" "${localPath}"`);
+
+        // Configure git to use gh auth helper
+        await execAsync('git config credential.helper ""', { cwd: localPath });
+        await execAsync('git config --add credential.helper "!gh auth git-credential"', { cwd: localPath });
+
+        // Add upstream remote if it doesn't exist
+        try {
+          await execAsync(`git remote add upstream https://github.com/${repo}.git`, { cwd: localPath });
+        } catch {
+          // Remote already exists, that's fine
+        }
+
+        console.log(`[GitHub] ✓ Fork ready at ${localPath}`);
+      } else {
+        // Direct clone using HTTPS URL
+        console.log(`[GitHub] Cloning directly to: ${localPath}`);
+        const repoUrl = `https://github.com/${repo}.git`;
+        await execAsync(`git clone "${repoUrl}" "${localPath}"`);
+
+        // Configure git to use gh auth helper
+        await execAsync('git config credential.helper ""', { cwd: localPath });
+        await execAsync('git config --add credential.helper "!gh auth git-credential"', { cwd: localPath });
+      }
+
+      console.log(`[GitHub] ✓ Repository ready at: ${localPath}`);
+      return localPath;
+    } catch (error) {
+      console.error(`[GitHub] Failed to clone repository:`, error);
+      throw new Error(`Failed to clone repository ${repo}: ${error}`);
     }
   }
 
@@ -203,22 +308,49 @@ export class RealGitHubService implements IGitHubService {
     const branchName = `codebounty/fix-issue-${issue.number}`;
 
     try {
+      // Ensure repository is cloned locally
+      console.log(`[GitHub] Preparing to create PR for issue #${issue.number}`);
+      const localPath = await this.ensureRepoCloned(issue.repoUrl);
+
       // Get current branch to return to later
-      const { stdout: currentBranch } = await execAsync('git branch --show-current');
+      const { stdout: currentBranch } = await execAsync('git branch --show-current', { cwd: localPath });
       const originalBranch = currentBranch.trim();
 
-      // Fetch latest and create branch from main/master
-      await execAsync('git fetch origin');
+      console.log(`[GitHub] Current branch: ${originalBranch}`);
 
-      // Try to create branch from origin/main or origin/master
+      // Fetch latest changes
+      console.log(`[GitHub] Fetching latest changes from remote...`);
+      await execAsync('git fetch --all', { cwd: localPath });
+
+      // Determine default branch (main or master)
+      let defaultBranch = 'main';
       try {
-        await execAsync(`git checkout -b ${branchName} origin/main`);
+        await execAsync('git rev-parse --verify origin/main', { cwd: localPath });
       } catch {
-        await execAsync(`git checkout -b ${branchName} origin/master`);
+        defaultBranch = 'master';
       }
+
+      console.log(`[GitHub] Default branch: ${defaultBranch}`);
+
+      // Check if branch already exists (from previous attempt)
+      let branchExists = false;
+      try {
+        await execAsync(`git rev-parse --verify ${branchName}`, { cwd: localPath });
+        branchExists = true;
+        console.log(`[GitHub] Branch ${branchName} already exists, deleting it...`);
+        await execAsync(`git checkout ${defaultBranch}`, { cwd: localPath });
+        await execAsync(`git branch -D ${branchName}`, { cwd: localPath });
+      } catch {
+        // Branch doesn't exist, that's fine
+      }
+
+      // Create new branch from latest default branch
+      console.log(`[GitHub] Creating branch ${branchName} from origin/${defaultBranch}...`);
+      await execAsync(`git checkout -b ${branchName} origin/${defaultBranch}`, { cwd: localPath });
 
       let solutionFile: string;
       let solutionContent: string;
+      let solutionFilePath: string; // Absolute path for file operations
 
       if (codeOnly) {
         // Code-only mode: Try to extract file path from solution or use a sensible default
@@ -238,14 +370,16 @@ export class RealGitHubService implements IGitHubService {
         solutionContent = this.stripMetadataComments(solution.code);
 
         // Ensure parent directory exists
+        solutionFilePath = join(localPath, solutionFile);
         const dir = solutionFile.includes('/') ? solutionFile.substring(0, solutionFile.lastIndexOf('/')) : null;
         if (dir) {
-          await mkdir(dir, { recursive: true });
+          await mkdir(join(localPath, dir), { recursive: true });
         }
       } else {
         // Full mode: Create markdown file with metadata
         solutionFile = `solutions/issue-${issue.number}-solution.md`;
-        await mkdir('solutions', { recursive: true });
+        solutionFilePath = join(localPath, solutionFile);
+        await mkdir(join(localPath, 'solutions'), { recursive: true });
 
         solutionContent = `# Solution for Issue #${issue.number}
 
@@ -269,12 +403,19 @@ ${solution.code}
 `;
       }
 
-      await writeFile(solutionFile, solutionContent);
+      console.log(`[GitHub] Writing solution to: ${solutionFile}`);
+      await writeFile(solutionFilePath, solutionContent);
 
       // Stage, commit, and push
-      await execAsync(`git add ${solutionFile}`);
-      await execAsync(`git commit -m "Fix issue #${issue.number}: ${this.escapeShell(issue.title.slice(0, 50))}"`);
-      await execAsync(`git push -u origin ${branchName}`);
+      console.log(`[GitHub] Staging changes...`);
+      await execAsync(`git add "${solutionFile}"`, { cwd: localPath });
+
+      console.log(`[GitHub] Creating commit...`);
+      const commitMsg = `Fix issue #${issue.number}: ${this.escapeShell(issue.title.slice(0, 50))}`;
+      await execAsync(`git commit -m "${commitMsg}"`, { cwd: localPath });
+
+      console.log(`[GitHub] Pushing branch to remote...`);
+      await execAsync(`git push -u origin ${branchName}`, { cwd: localPath });
 
       // Create PR
       const prTitle = `Fix #${issue.number}: ${issue.title}`;
@@ -300,17 +441,22 @@ See \`${solutionFile}\` for the proposed fix.
 *Created by [Bounty Hunter](https://github.com) - AI Agents Competing with X402 Payments*`;
       }
 
+      console.log(`[GitHub] Creating pull request...`);
       const { stdout: prUrl } = await execAsync(
-        `gh pr create --repo ${repo} --title "${this.escapeShell(prTitle)}" --body "${this.escapeShell(prBody)}"`
+        `gh pr create --title "${this.escapeShell(prTitle)}" --body "${this.escapeShell(prBody)}"`,
+        { cwd: localPath }
       );
 
+      console.log(`[GitHub] ✓ Pull request created: ${prUrl.trim()}`);
+
       // Return to original branch
-      await execAsync(`git checkout ${originalBranch}`);
+      console.log(`[GitHub] Returning to branch: ${originalBranch}`);
+      await execAsync(`git checkout ${originalBranch}`, { cwd: localPath });
 
       return prUrl.trim();
     } catch (error) {
-      console.error('Failed to create solution PR:', error);
-      throw new Error(`Failed to create PR for issue #${issue.number}`);
+      console.error('[GitHub] Failed to create solution PR:', error);
+      throw new Error(`Failed to create PR for issue #${issue.number}: ${error}`);
     }
   }
 
