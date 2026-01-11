@@ -9,7 +9,7 @@ import type { ILLMService } from './types/services.js';
  */
 async function launchAgents(): Promise<void> {
   console.log('='.repeat(60));
-  console.log('CodeBounty Agent Launcher');
+  console.log('Bounty Hunter Agent Launcher');
   console.log('='.repeat(60));
   console.log();
 

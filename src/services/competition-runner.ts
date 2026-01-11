@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import type { Services } from '../types/services.js';
 import type { Competition, Issue, Solution, AgentStatus, PaymentRecord } from '../types/index.js';
 import type { CompetitionEvent } from '../types/events.js';
+import type { CodeChunk } from '../types/services.js';
 import { config } from '../config.js';
 import { log } from '../utils/logger.js';
 
@@ -55,7 +56,7 @@ export class CompetitionRunner {
    * Returns the final competition state
    */
   async run(competition: Competition): Promise<Competition> {
-    const { state, llm, reviewer, payment, events } = this.services;
+    const { state, llm, reviewer, payment, events, rag } = this.services;
 
     log('info', 'CompetitionRunner', `Starting competition ${competition.id}`);
 
@@ -69,6 +70,56 @@ export class CompetitionRunner {
       timestamp: Date.now(),
       payload: { competition: { ...competition, status: 'running' } },
     });
+
+    // Phase 1.5: RAG - Query relevant code
+    let relevantCode: CodeChunk[] = [];
+    try {
+      await this.emitEvent({
+        type: 'rag:indexing',
+        competitionId: competition.id,
+        timestamp: Date.now(),
+        payload: {
+          repoUrl: competition.issue.repoUrl,
+          message: `Searching for relevant code in ${competition.issue.repoUrl}...`,
+        },
+      });
+
+      relevantCode = await rag.queryRelevantCode(
+        competition.issue,
+        10,
+        (stage, message, current, total) => {
+          this.emitEvent({
+            type: 'rag:progress',
+            competitionId: competition.id,
+            timestamp: Date.now(),
+            payload: { stage, message, current, total },
+          });
+        }
+      );
+
+      await this.emitEvent({
+        type: 'rag:complete',
+        competitionId: competition.id,
+        timestamp: Date.now(),
+        payload: {
+          chunksFound: relevantCode.length,
+          message: `Found ${relevantCode.length} relevant code chunks`,
+        },
+      });
+
+      log('info', 'CompetitionRunner', `Found ${relevantCode.length} relevant code chunks`);
+    } catch (error) {
+      log('warn', 'CompetitionRunner', `RAG query failed: ${error}`);
+      await this.emitEvent({
+        type: 'rag:complete',
+        competitionId: competition.id,
+        timestamp: Date.now(),
+        payload: {
+          chunksFound: 0,
+          message: `RAG query failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      });
+    }
 
     // Phase 2: Start all agents
     const startedAt = Date.now();
@@ -93,7 +144,7 @@ export class CompetitionRunner {
       const startTime = Date.now();
 
       try {
-        const prompt = this.buildPrompt(competition.issue);
+        const prompt = this.buildPrompt(competition.issue, relevantCode);
 
         // Use streaming if available
         let code: string;
@@ -111,9 +162,9 @@ export class CompetitionRunner {
                 accumulated,
               },
             });
-          });
+          }, agentConfig.provider);
         } else {
-          code = await llm.generateSolution(prompt, agentConfig.model);
+          code = await llm.generateSolution(prompt, agentConfig.model, agentConfig.provider);
         }
 
         const solution: Solution = {
@@ -361,17 +412,45 @@ export class CompetitionRunner {
   }
 
   /**
-   * Build prompt from issue
+   * Build prompt from issue with relevant code context
    */
-  private buildPrompt(issue: Issue): string {
-    return `Fix this GitHub issue:
+  private buildPrompt(issue: Issue, relevantCode: CodeChunk[] = []): string {
+    let prompt = `Fix this GitHub issue:
 
 Title: ${issue.title}
 
 Description:
 ${issue.body}
+`;
 
-Provide a complete code solution to fix this issue.`;
+    // Add relevant code context if available
+    if (relevantCode.length > 0) {
+      prompt += `
+## Relevant Code Context
+
+The following code snippets from the codebase may be relevant to this issue:
+
+`;
+      for (const chunk of relevantCode) {
+        prompt += `### ${chunk.filePath} - ${chunk.chunkType}: ${chunk.chunkName}
+\`\`\`typescript
+${chunk.code}
+\`\`\`
+
+`;
+      }
+    }
+
+    prompt += `
+## Instructions
+
+Provide a complete code solution to fix this issue. Your solution should:
+1. Address the problem described in the issue
+2. Be well-structured and follow best practices
+3. Include any necessary imports or dependencies
+`;
+
+    return prompt;
   }
 
   /**

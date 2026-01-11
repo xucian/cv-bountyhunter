@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { cn, formatTime } from '@/lib/utils';
 import type { AgentStatus } from '@/lib/services';
 import { Loader2, Check, X, Clock, Trophy } from 'lucide-react';
+import { CodePreview } from './CodeBlock';
 
 interface AgentCardProps {
   agent: AgentStatus;
@@ -69,10 +70,11 @@ export function AgentCard({ agent, isWinner, streamingCode }: AgentCardProps) {
           <div className="text-xs text-muted-foreground mb-1">
             {agent.status === 'solving' ? 'Generating...' : 'Solution:'}
           </div>
-          <pre className="text-xs bg-muted/50 rounded p-2 overflow-hidden max-h-32 text-muted-foreground font-mono">
-            {agent.solution?.code || streamingCode || ''}
-            {agent.status === 'solving' && <span className="animate-pulse">|</span>}
-          </pre>
+          <CodePreview
+            code={agent.solution?.code || streamingCode || ''}
+            maxLines={10}
+            streaming={agent.status === 'solving'}
+          />
         </div>
       )}
 

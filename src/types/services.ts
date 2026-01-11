@@ -1,4 +1,4 @@
-import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus, TaskEvaluation } from './index.js';
+import type { Issue, Solution, Competition, SolveTask, PaymentRequest, PaymentRecord, ReviewResult, AgentStatus, TaskEvaluation, LLMProvider } from './index.js';
 import type { CompetitionEvent } from './events.js';
 
 // GitHub operations
@@ -12,7 +12,7 @@ export interface IGitHubService {
   createIssue(repoUrl: string, title: string, body: string, labels?: string[]): Promise<Issue>;
   createBranch(repo: string, branchName: string): Promise<void>;
   createPR(repo: string, branch: string, title: string, body: string): Promise<string>;
-  createSolutionPR(issue: Issue, solution: Solution, agentName: string): Promise<string>;
+  createSolutionPR(issue: Issue, solution: Solution, agentName: string, codeOnly?: boolean): Promise<string>;
 }
 
 // Streaming callback type
@@ -20,11 +20,12 @@ export type StreamCallback = (chunk: string, accumulated: string) => void;
 
 // AI/LLM for code generation
 export interface ILLMService {
-  generateSolution(prompt: string, model: string): Promise<string>;
+  generateSolution(prompt: string, model: string, provider?: LLMProvider): Promise<string>;
   generateSolutionStreaming?(
     prompt: string,
     model: string,
-    onChunk: StreamCallback
+    onChunk: StreamCallback,
+    provider?: LLMProvider
   ): Promise<string>;
 }
 
@@ -73,15 +74,24 @@ export interface IReviewerService {
   ): Promise<ReviewResult>;
 }
 
+// RAG progress callback for streaming progress updates
+export type RAGProgressCallback = (
+  stage: 'scanning' | 'parsing' | 'embedding' | 'querying',
+  message: string,
+  current?: number,
+  total?: number
+) => void;
+
 // RAG (Retrieval-Augmented Generation) service for code indexing and search
 export interface IRAGService {
   /**
    * Index a local repository into MongoDB Atlas
    * @param repoPath - Local filesystem path to repo (e.g., "/Users/me/project")
    * @param repoUrl - GitHub URL (e.g., "https://github.com/owner/repo")
+   * @param onProgress - Optional callback for progress updates
    * @returns Commit ID and number of chunks indexed
    */
-  indexRepo(repoPath: string, repoUrl: string): Promise<{
+  indexRepo(repoPath: string, repoUrl: string, onProgress?: RAGProgressCallback): Promise<{
     commitId: string;
     chunksIndexed: number;
   }>;
@@ -90,9 +100,10 @@ export interface IRAGService {
    * Query relevant code chunks for an issue
    * @param issue - The GitHub issue to find relevant code for
    * @param limit - Max number of chunks to return (default: 10)
+   * @param onProgress - Optional callback for progress updates
    * @returns Array of relevant code chunks, sorted by relevance score
    */
-  queryRelevantCode(issue: Issue, limit?: number): Promise<CodeChunk[]>;
+  queryRelevantCode(issue: Issue, limit?: number, onProgress?: RAGProgressCallback): Promise<CodeChunk[]>;
 
   /**
    * Check if a repo is already indexed

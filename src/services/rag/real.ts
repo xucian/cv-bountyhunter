@@ -6,7 +6,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { config } from '../../config.js';
 import { SharedMongoClient } from '../mongodb-client.js';
-import type { IRAGService, CodeChunk } from '../../types/services.js';
+import type { IRAGService, CodeChunk, RAGProgressCallback } from '../../types/services.js';
 import type { Issue } from '../../types/index.js';
 
 // Handle @babel/traverse ESM/CJS compatibility
@@ -64,27 +64,43 @@ interface CodeChunkDocument {
  * Implements AST-based code chunking and vector search
  */
 export class RealRAGService implements IRAGService {
-  private voyageClient: VoyageAIClient;
+  private voyageClient: VoyageAIClient | null = null;
   private db: Db | null = null;
   private chunksCollection: Collection<CodeChunkDocument> | null = null;
   private connected = false;
+  private configError: string | null = null;
 
   constructor() {
-    if (!config.voyage.apiKey) {
-      throw new Error('VOYAGE_API_KEY not configured');
+    if (!config.voyage?.apiKey) {
+      this.configError = 'VOYAGE_API_KEY not configured';
+      console.warn(`[RealRAG] Warning: ${this.configError}`);
+      return;
     }
 
-    if (!config.mongodb.uri) {
-      throw new Error('MONGODB_URI not configured');
+    if (!config.mongodb?.uri) {
+      this.configError = 'MONGODB_URI not configured';
+      console.warn(`[RealRAG] Warning: ${this.configError}`);
+      return;
     }
 
     this.voyageClient = new VoyageAIClient({ apiKey: config.voyage.apiKey });
   }
 
   /**
+   * Check if RAG is properly configured
+   */
+  private checkConfig(): void {
+    if (this.configError) {
+      throw new Error(`RealRAG not available: ${this.configError}`);
+    }
+  }
+
+  /**
    * Connect to MongoDB Atlas using shared client
    */
   private async connect(): Promise<void> {
+    this.checkConfig();
+
     if (this.connected && this.db && this.chunksCollection) {
       return;
     }
@@ -104,12 +120,17 @@ export class RealRAGService implements IRAGService {
   /**
    * Index a repository into MongoDB Atlas
    */
-  async indexRepo(repoPath: string, repoUrl: string): Promise<{ commitId: string; chunksIndexed: number }> {
+  async indexRepo(
+    repoPath: string,
+    repoUrl: string,
+    onProgress?: RAGProgressCallback
+  ): Promise<{ commitId: string; chunksIndexed: number }> {
     await this.connect();
 
     // Get commit SHA
     const commitId = this.getCommitSHA(repoPath);
     console.log(`[RealRAG] Indexing ${repoUrl} (commit: ${commitId})`);
+    onProgress?.('scanning', `Starting index for ${repoUrl} (commit: ${commitId.slice(0, 8)})`);
 
     // Check if already indexed
     console.log(`[RealRAG] Checking if repo is already indexed...`);
@@ -119,6 +140,7 @@ export class RealRAGService implements IRAGService {
     if (alreadyIndexed) {
       const count = await this.chunksCollection!.countDocuments({ repoUrl, commitId });
       console.log(`[RealRAG] ✓ Repo already indexed (${count} chunks found) - SKIPPING INDEXING`);
+      onProgress?.('scanning', `Repository already indexed (${count} chunks in database)`);
       return { commitId, chunksIndexed: count };
     }
     console.log(`[RealRAG] ✗ Repo not indexed, proceeding with fresh indexing...`);
@@ -126,8 +148,11 @@ export class RealRAGService implements IRAGService {
     // Find all source files
     console.log(`[RealRAG] Scanning repository for source files...`);
     console.log(`[RealRAG]   - repoPath: ${repoPath}`);
+    onProgress?.('scanning', `Scanning repository for source files...`);
     const files = this.findSourceFiles(repoPath);
     console.log(`[RealRAG] ✓ Found ${files.length} source files to parse`);
+    onProgress?.('scanning', `Found ${files.length} source files (.ts, .tsx, .js, .jsx, .py)`);
+
     if (files.length > 0 && files.length <= 10) {
       console.log(`[RealRAG] Files to parse:`);
       files.forEach(f => console.log(`[RealRAG]   - ${path.relative(repoPath, f)}`));
@@ -139,20 +164,25 @@ export class RealRAGService implements IRAGService {
 
     // Parse and chunk
     console.log(`[RealRAG] Starting AST parsing and chunking...`);
+    onProgress?.('parsing', `Parsing ${files.length} files with AST...`);
     const allChunks: Array<Omit<CodeChunkDocument, 'embedding' | 'indexedAt' | 'repoUrl' | 'commitId'>> = [];
     let parsedCount = 0;
     let failedCount = 0;
 
-    for (const file of files) {
-      const chunks = this.parseFile(file, repoPath);
+    for (let i = 0; i < files.length; i++) {
+      const chunks = this.parseFile(files[i], repoPath);
       if (chunks.length > 0) {
         allChunks.push(...chunks);
         parsedCount++;
         if (parsedCount <= 5 || parsedCount % 50 === 0) {
-          console.log(`[RealRAG] Parsed ${parsedCount}/${files.length}: ${path.relative(repoPath, file)} → ${chunks.length} chunks`);
+          console.log(`[RealRAG] Parsed ${parsedCount}/${files.length}: ${path.relative(repoPath, files[i])} → ${chunks.length} chunks`);
         }
       } else {
         failedCount++;
+      }
+
+      if (i % 10 === 0 || i === files.length - 1) {
+        onProgress?.('parsing', `Parsing files...`, i + 1, files.length);
       }
     }
 
@@ -160,6 +190,7 @@ export class RealRAGService implements IRAGService {
     console.log(`[RealRAG]   - Successfully parsed: ${parsedCount} files`);
     console.log(`[RealRAG]   - Failed/No chunks: ${failedCount} files`);
     console.log(`[RealRAG]   - Total chunks extracted: ${allChunks.length}`);
+    onProgress?.('parsing', `Extracted ${allChunks.length} code chunks (functions, classes, methods)`);
 
     if (allChunks.length === 0) {
       console.log('[RealRAG] ⚠️  WARNING: No chunks extracted, skipping embedding');
@@ -167,6 +198,7 @@ export class RealRAGService implements IRAGService {
       console.log('[RealRAG]   - The repo has no .ts/.tsx/.js/.jsx/.py files, OR');
       console.log('[RealRAG]   - All files failed to parse (check syntax errors)');
       console.log('[RealRAG]   - Files had no extractable functions/classes');
+      onProgress?.('embedding', `No code chunks found to embed`);
       return { commitId, chunksIndexed: 0 };
     }
 
@@ -179,17 +211,19 @@ export class RealRAGService implements IRAGService {
     console.log(`[RealRAG]   - Total batches: ${totalBatches}`);
 
     const documents: CodeChunkDocument[] = [];
+    onProgress?.('embedding', `Generating embeddings for ${allChunks.length} chunks...`);
 
     for (let i = 0; i < allChunks.length; i += batchSize) {
+      const batchNum = Math.floor(i / batchSize) + 1;
       const batch = allChunks.slice(i, i + batchSize);
       const texts = batch.map(c => c.code);
-      const batchNum = Math.floor(i / batchSize) + 1;
 
       console.log(`[RealRAG] Embedding batch ${batchNum}/${totalBatches} (${batch.length} chunks)...`);
+      onProgress?.('embedding', `Embedding batch ${batchNum}/${totalBatches}...`, batchNum, totalBatches);
 
       try {
         const startTime = Date.now();
-        const response = await this.voyageClient.embed({
+        const response = await this.voyageClient!.embed({
           input: texts,
           model: config.voyage.model,
         });
@@ -216,10 +250,12 @@ export class RealRAGService implements IRAGService {
     // Insert into MongoDB
     console.log(`[RealRAG] Inserting ${documents.length} documents into MongoDB...`);
     if (documents.length > 0) {
+      onProgress?.('embedding', `Storing ${documents.length} chunks in vector database...`);
       const startTime = Date.now();
       await this.chunksCollection!.insertMany(documents);
       const elapsedMs = Date.now() - startTime;
       console.log(`[RealRAG] ✓ Indexed ${documents.length} chunks to MongoDB Atlas in ${elapsedMs}ms`);
+      onProgress?.('embedding', `✓ Indexed ${documents.length} chunks to MongoDB Atlas`);
     }
 
     return { commitId, chunksIndexed: documents.length };
@@ -228,22 +264,29 @@ export class RealRAGService implements IRAGService {
   /**
    * Query relevant code chunks using vector search
    */
-  async queryRelevantCode(issue: Issue, limit = 10): Promise<CodeChunk[]> {
+  async queryRelevantCode(
+    issue: Issue,
+    limit = 10,
+    onProgress?: RAGProgressCallback
+  ): Promise<CodeChunk[]> {
     await this.connect();
 
     // Create query text from issue
     const queryText = `${issue.title}\n\n${issue.body}`;
     console.log(`[RealRAG] Querying for issue: ${issue.title.slice(0, 50)}...`);
+    onProgress?.('querying', `Searching for code relevant to: "${issue.title.slice(0, 50)}..."`);
 
     try {
       // Generate query embedding
-      const response = await this.voyageClient.embed({
+      onProgress?.('querying', `Generating query embedding...`);
+      const response = await this.voyageClient!.embed({
         input: [queryText],
         model: config.voyage.model,
       });
       const queryEmbedding = response.data[0].embedding;
 
       // Vector search in MongoDB Atlas
+      onProgress?.('querying', `Running vector similarity search...`);
       const pipeline = [
         {
           $vectorSearch: {
@@ -268,10 +311,12 @@ export class RealRAGService implements IRAGService {
 
       const results = await this.chunksCollection!.aggregate(pipeline).toArray();
       console.log(`[RealRAG] Found ${results.length} relevant chunks`);
+      onProgress?.('querying', `Found ${results.length} relevant code chunks`);
 
       return results as CodeChunk[];
     } catch (error) {
       console.warn('[RealRAG] Vector search failed, continuing without context:', error);
+      onProgress?.('querying', `Vector search failed: ${error}`);
       return [];
     }
   }
@@ -476,5 +521,6 @@ export class RealRAGService implements IRAGService {
   async close(): Promise<void> {
     // SharedMongoClient manages the connection lifecycle
     this.connected = false;
+    console.log('[RealRAG] Disconnected from MongoDB');
   }
 }

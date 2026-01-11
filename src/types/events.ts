@@ -7,6 +7,9 @@ import type { Competition, Solution, AgentStatus, ReviewResult, PaymentRecord } 
 export type CompetitionEventType =
   | 'competition:created'
   | 'competition:started'
+  | 'rag:indexing'
+  | 'rag:progress'
+  | 'rag:complete'
   | 'agent:solving'
   | 'agent:streaming'
   | 'agent:done'
@@ -53,6 +56,42 @@ export interface CompetitionStartedEvent extends CompetitionEventBase {
   type: 'competition:started';
   payload: {
     competition: Competition;
+  };
+}
+
+/**
+ * RAG indexing started
+ */
+export interface RAGIndexingEvent extends CompetitionEventBase {
+  type: 'rag:indexing';
+  payload: {
+    repoUrl: string;
+    message: string;
+  };
+}
+
+/**
+ * RAG indexing progress update
+ */
+export interface RAGProgressEvent extends CompetitionEventBase {
+  type: 'rag:progress';
+  payload: {
+    stage: 'scanning' | 'parsing' | 'embedding' | 'querying';
+    message: string;
+    current?: number;
+    total?: number;
+  };
+}
+
+/**
+ * RAG indexing/querying complete
+ */
+export interface RAGCompleteEvent extends CompetitionEventBase {
+  type: 'rag:complete';
+  payload: {
+    chunksIndexed?: number;
+    chunksFound?: number;
+    message: string;
   };
 }
 
@@ -154,6 +193,9 @@ export type CompetitionEvent =
   | CompetitionSyncEvent
   | CompetitionCreatedEvent
   | CompetitionStartedEvent
+  | RAGIndexingEvent
+  | RAGProgressEvent
+  | RAGCompleteEvent
   | AgentSolvingEvent
   | AgentStreamingEvent
   | AgentDoneEvent

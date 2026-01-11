@@ -1,10 +1,11 @@
 import type { ILLMService } from '../types/services.js';
-import type { Issue, Solution, AgentConfig, TaskEvaluation } from '../types/index.js';
+import type { Issue, Solution, AgentConfig, TaskEvaluation, LLMProvider } from '../types/index.js';
 
 export class CodingAgent {
   constructor(
     private agentId: string,
     private model: string,
+    private provider: LLMProvider,
     private llmService: ILLMService,
     private economics: Pick<AgentConfig, 'costPerToken' | 'avgTokensPerSolution' | 'minimumMargin'>
   ) {}
@@ -45,7 +46,7 @@ Provide a complete code solution that fixes this issue. Include:
 3. A brief explanation of the fix`;
 
     try {
-      const code = await this.llmService.generateSolution(prompt, this.model);
+      const code = await this.llmService.generateSolution(prompt, this.model, this.provider);
       return {
         agentId: this.agentId,
         code,

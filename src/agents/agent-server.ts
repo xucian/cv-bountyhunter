@@ -29,6 +29,7 @@ export class AgentServer {
     this.agent = new CodingAgent(
       agentConfig.id,
       agentConfig.model,
+      agentConfig.provider,
       llmService,
       {
         costPerToken: agentConfig.costPerToken,

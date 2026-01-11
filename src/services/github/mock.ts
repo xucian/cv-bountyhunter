@@ -149,10 +149,12 @@ The /api/users endpoint is slow when fetching large datasets.
   async createSolutionPR(
     issue: Issue,
     solution: Solution,
-    agentName: string
+    agentName: string,
+    codeOnly = false
   ): Promise<string> {
     console.log(`[MockGitHub] Creating solution PR for issue #${issue.number}`);
     console.log(`[MockGitHub] Solution by: ${agentName}`);
+    console.log(`[MockGitHub] Code only mode: ${codeOnly}`);
     console.log(`[MockGitHub] Code preview: ${solution.code.slice(0, 100)}...`);
     await this.delay(800);
 

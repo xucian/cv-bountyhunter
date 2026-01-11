@@ -160,7 +160,7 @@ export function App() {
         paddingX={2}
       >
         <Text dimColor>
-          CodeBounty - AI Agents Competing with X402 Payments
+          Bounty Hunter - AI Agents Competing with X402 Payments
         </Text>
       </Box>
     </Box>

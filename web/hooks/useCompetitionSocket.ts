@@ -8,6 +8,9 @@ type CompetitionEventType =
   | 'competition:sync'
   | 'competition:created'
   | 'competition:started'
+  | 'rag:indexing'
+  | 'rag:progress'
+  | 'rag:complete'
   | 'agent:solving'
   | 'agent:streaming'
   | 'agent:done'
@@ -32,13 +35,31 @@ interface CompetitionEvent {
     reviewResult?: any;
     chunk?: string;
     accumulated?: string;
+    // RAG event fields
+    repoUrl?: string;
+    message?: string;
+    stage?: 'scanning' | 'parsing' | 'embedding' | 'querying';
+    current?: number;
+    total?: number;
+    chunksIndexed?: number;
+    chunksFound?: number;
   };
 }
 
-// Streaming state for agents and judge
+// RAG progress state
+interface RAGProgress {
+  stage: 'scanning' | 'parsing' | 'embedding' | 'querying' | 'complete' | 'idle';
+  message: string;
+  current?: number;
+  total?: number;
+  chunksFound?: number;
+}
+
+// Streaming state for agents, judge, and RAG
 interface StreamingState {
   agentCode: Record<string, string>; // agentId -> accumulated code
   judgingThinking: string;
+  ragProgress: RAGProgress;
 }
 
 interface UseCompetitionSocketOptions {
@@ -70,6 +91,7 @@ export function useCompetitionSocket({
   const [streaming, setStreaming] = useState<StreamingState>({
     agentCode: {},
     judgingThinking: '',
+    ragProgress: { stage: 'idle', message: '' },
   });
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -104,8 +126,45 @@ export function useCompetitionSocket({
           if (data.type === 'competition:sync' && data.payload.competition) {
             setCompetition(data.payload.competition);
             // Reset streaming state on sync
-            setStreaming({ agentCode: {}, judgingThinking: '' });
+            setStreaming({ agentCode: {}, judgingThinking: '', ragProgress: { stage: 'idle', message: '' } });
             return;
+          }
+
+          // Handle RAG events
+          if (data.type === 'rag:indexing') {
+            setStreaming((prev) => ({
+              ...prev,
+              ragProgress: {
+                stage: 'scanning',
+                message: data.payload.message || 'Starting code analysis...',
+              },
+            }));
+            return;
+          }
+
+          if (data.type === 'rag:progress') {
+            setStreaming((prev) => ({
+              ...prev,
+              ragProgress: {
+                stage: data.payload.stage || 'scanning',
+                message: data.payload.message || '',
+                current: data.payload.current,
+                total: data.payload.total,
+              },
+            }));
+            return;
+          }
+
+          if (data.type === 'rag:complete') {
+            setStreaming((prev) => ({
+              ...prev,
+              ragProgress: {
+                stage: 'complete',
+                message: data.payload.message || 'Code analysis complete',
+                chunksFound: data.payload.chunksFound,
+              },
+            }));
+            // Don't return - let it add to events
           }
 
           // Handle streaming events
