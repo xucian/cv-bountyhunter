@@ -376,40 +376,74 @@ export class RealGitHubService implements IGitHubService {
       console.log(`[GitHub] Creating branch ${branchName} from origin/${defaultBranch}...`);
       await execAsync(`git checkout -b ${branchName} origin/${defaultBranch}`, { cwd: localPath });
 
-      let solutionFile: string;
-      let solutionContent: string;
-      let solutionFilePath: string; // Absolute path for file operations
+      // Apply file changes if available, otherwise fall back to old behavior
+      if (solution.fileChanges && solution.fileChanges.length > 0) {
+        console.log(`[GitHub] Applying ${solution.fileChanges.length} file change(s)...`);
 
-      if (codeOnly) {
-        // Code-only mode: Try to extract file path from solution or use a sensible default
-        const fileMatch = solution.code.match(/\/\/\s*File:\s*(.+)|\/\*\s*File:\s*(.+?)\s*\*\/|#\s*File:\s*(.+)/i);
-        const extractedPath = fileMatch?.[1] || fileMatch?.[2] || fileMatch?.[3];
+        for (const fileChange of solution.fileChanges) {
+          const absolutePath = join(localPath, fileChange.filePath);
 
-        if (extractedPath) {
-          // Use extracted file path
-          solutionFile = extractedPath.trim();
-        } else {
-          // Default to a code file based on detected language
-          const ext = this.detectExtension(solution.code);
-          solutionFile = `src/fix-issue-${issue.number}${ext}`;
+          if (fileChange.action === 'delete') {
+            console.log(`[GitHub]   - Deleting: ${fileChange.filePath}`);
+            await unlink(absolutePath).catch(() => {/* ignore if file doesn't exist */});
+          } else {
+            // create or modify
+            console.log(`[GitHub]   - ${fileChange.action === 'create' ? 'Creating' : 'Modifying'}: ${fileChange.filePath}`);
+
+            // Ensure parent directory exists
+            const dir = fileChange.filePath.includes('/')
+              ? fileChange.filePath.substring(0, fileChange.filePath.lastIndexOf('/'))
+              : null;
+            if (dir) {
+              await mkdir(join(localPath, dir), { recursive: true });
+            }
+
+            // Write file content
+            await writeFile(absolutePath, fileChange.content, 'utf-8');
+          }
         }
 
-        // Strip any metadata comments from the code
-        solutionContent = this.stripMetadataComments(solution.code);
-
-        // Ensure parent directory exists
-        solutionFilePath = join(localPath, solutionFile);
-        const dir = solutionFile.includes('/') ? solutionFile.substring(0, solutionFile.lastIndexOf('/')) : null;
-        if (dir) {
-          await mkdir(join(localPath, dir), { recursive: true });
-        }
+        // Stage all changes
+        console.log(`[GitHub] Staging all changes...`);
+        await execAsync('git add -A', { cwd: localPath });
       } else {
-        // Full mode: Create markdown file with metadata
-        solutionFile = `solutions/issue-${issue.number}-solution.md`;
-        solutionFilePath = join(localPath, solutionFile);
-        await mkdir(join(localPath, 'solutions'), { recursive: true });
+        // FALLBACK: Old behavior (for backward compatibility)
+        console.log(`[GitHub] No structured file changes, using fallback mode...`);
 
-        solutionContent = `# Solution for Issue #${issue.number}
+        let solutionFile: string;
+        let solutionContent: string;
+        let solutionFilePath: string;
+
+        if (codeOnly) {
+          // Code-only mode: Try to extract file path from solution or use a sensible default
+          const fileMatch = solution.code.match(/\/\/\s*File:\s*(.+)|\/\*\s*File:\s*(.+?)\s*\*\/|#\s*File:\s*(.+)/i);
+          const extractedPath = fileMatch?.[1] || fileMatch?.[2] || fileMatch?.[3];
+
+          if (extractedPath) {
+            // Use extracted file path
+            solutionFile = extractedPath.trim();
+          } else {
+            // Default to a code file based on detected language
+            const ext = this.detectExtension(solution.code);
+            solutionFile = `src/fix-issue-${issue.number}${ext}`;
+          }
+
+          // Strip any metadata comments from the code
+          solutionContent = this.stripMetadataComments(solution.code);
+
+          // Ensure parent directory exists
+          solutionFilePath = join(localPath, solutionFile);
+          const dir = solutionFile.includes('/') ? solutionFile.substring(0, solutionFile.lastIndexOf('/')) : null;
+          if (dir) {
+            await mkdir(join(localPath, dir), { recursive: true });
+          }
+        } else {
+          // Full mode: Create markdown file with metadata
+          solutionFile = `solutions/issue-${issue.number}-solution.md`;
+          solutionFilePath = join(localPath, solutionFile);
+          await mkdir(join(localPath, 'solutions'), { recursive: true });
+
+          solutionContent = `# Solution for Issue #${issue.number}
 
 ## Issue: ${issue.title}
 
@@ -429,14 +463,15 @@ ${solution.code}
 
 *Generated by Bounty Hunter - AI Agents Competing with X402 Payments*
 `;
+        }
+
+        console.log(`[GitHub] Writing solution to: ${solutionFile}`);
+        await writeFile(solutionFilePath, solutionContent);
+
+        // Stage changes
+        console.log(`[GitHub] Staging changes...`);
+        await execAsync(`git add "${solutionFile}"`, { cwd: localPath });
       }
-
-      console.log(`[GitHub] Writing solution to: ${solutionFile}`);
-      await writeFile(solutionFilePath, solutionContent);
-
-      // Stage, commit, and push
-      console.log(`[GitHub] Staging changes...`);
-      await execAsync(`git add "${solutionFile}"`, { cwd: localPath });
 
       console.log(`[GitHub] Creating commit...`);
       const commitMsg = `Fix issue #${issue.number}: ${this.escapeShell(issue.title.slice(0, 50))}`;
@@ -446,56 +481,43 @@ ${solution.code}
       await execAsync(`git push -u origin ${branchName}`, { cwd: localPath });
 
       // Create PR with professional formatting
-      const prTitle = codeOnly
-        ? `Fix: ${issue.title}`
-        : `Resolve issue #${issue.number}: ${issue.title}`;
+      const prTitle = `Fix: ${issue.title}`;
+      const timeInSeconds = (solution.timeMs / 1000).toFixed(2);
 
       let prBody: string;
 
-      if (codeOnly) {
-        // Professional code-only PR body
-        prBody = `## Description
+      // Build files changed summary
+      let filesChangedSummary = '';
+      if (solution.fileChanges && solution.fileChanges.length > 0) {
+        const changedFiles = solution.fileChanges.map(fc =>
+          `- \`${fc.filePath}\` (${fc.action === 'create' ? '✨ created' : fc.action === 'delete' ? '🗑️ deleted' : '✏️ modified'})`
+        ).join('\n');
+        filesChangedSummary = `### Files Changed\n\n${changedFiles}\n\n`;
+      }
 
-This PR addresses issue #${issue.number}.
+      prBody = `## Overview
 
-${issue.body ? `### Issue Details\n\n${issue.body.slice(0, 500)}${issue.body.length > 500 ? '...' : ''}\n\n` : ''}### Changes
+This pull request resolves issue #${issue.number} with an automated solution generated by **${agentName}**.
 
-${solution.code.length > 500 ? 'See the changed files for the complete implementation.' : '```\n' + solution.code + '\n```'}
+${solution.explanation ? `### Solution Approach\n\n${solution.explanation}\n\n` : ''}${filesChangedSummary}### Issue Details
 
----
+${issue.body ? issue.body.slice(0, 800) + (issue.body.length > 800 ? '...' : '') : issue.title}
 
-Closes #${issue.number}`;
-      } else {
-        // Professional full-mode PR body
-        const timeInSeconds = (solution.timeMs / 1000).toFixed(2);
-        prBody = `## Overview
+### Implementation Details
 
-This pull request resolves issue #${issue.number} with an automated solution generated by the CodeBounty AI agent system.
-
-## Problem Statement
-
-${issue.body || issue.title}
-
-## Proposed Solution
-
-The solution has been generated and is available in \`${solutionFile}\`. Please review the implementation details in the file.
-
-## Implementation Details
-
-- **Processing Agent**: ${agentName}
+- **Agent**: ${agentName}
 - **Processing Time**: ${timeInSeconds}s
-- **Solution Approach**: AI-generated automated fix
+- **Files Modified**: ${solution.fileChanges?.length || 0}
 
-## Review Notes
+### Review Notes
 
-Please carefully review the proposed changes before merging. While this solution was generated automatically, human review is recommended to ensure it meets your project's standards and requirements.
+⚠️ This solution was generated automatically by an AI agent. Please carefully review all changes before merging to ensure they meet your project's standards and requirements.
 
 ---
 
 Closes #${issue.number}
 
 <sub>Generated by [CodeBounty](https://github.com/yourusername/codebounty) - AI-powered issue resolution platform</sub>`;
-      }
 
       console.log(`[GitHub] Creating pull request...`);
 

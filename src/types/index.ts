@@ -8,9 +8,17 @@ export interface Issue {
   labels: string[];
 }
 
+export interface FileChange {
+  filePath: string;           // Relative path from repo root (e.g., "src/components/Button.tsx")
+  content: string;            // New content for the file
+  action: 'create' | 'modify' | 'delete';
+}
+
 export interface Solution {
   agentId: string;
-  code: string;
+  code: string;               // Raw solution text (for backward compat / display)
+  fileChanges?: FileChange[]; // Structured file modifications
+  explanation?: string;       // Human-readable explanation
   timeMs: number;
   success: boolean;
 }
