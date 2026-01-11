@@ -79,7 +79,7 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
       const issue = await githubService.createIssue(
         repoUrl,
         newIssueTitle.trim(),
-        newIssueBody.trim() || 'Created via CodeBounty'
+        newIssueBody.trim() || 'Created via Bounty Hunter'
       );
       console.log('[MainMenu] Issue created:', issue.number);
       console.log('[MainMenu] Calling onStartCompetition for new issue...');

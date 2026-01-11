@@ -216,7 +216,7 @@ services.events.subscribe((event) => {
 httpServer.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════╗
-║     CodeBounty WebSocket Server                ║
+║     Bounty Hunter WebSocket Server                ║
 ║     HTTP:  http://localhost:${PORT}              ║
 ║     WS:    ws://localhost:${PORT}                ║
 ╚════════════════════════════════════════════════╝
