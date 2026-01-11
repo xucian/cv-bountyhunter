@@ -327,6 +327,10 @@ export class RealGitHubService implements IGitHubService {
       console.log(`[GitHub] Preparing to create PR for issue #${issue.number}`);
       const localPath = await this.ensureRepoCloned(issue.repoUrl);
 
+      // Proactive repo cleanup: Remove stale locks and reset state
+      console.log(`[GitHub] Running proactive repository cleanup...`);
+      await this.cleanupRepoState(localPath);
+
       // Get current branch to return to later
       const { stdout: currentBranch } = await execAsync('git branch --show-current', { cwd: localPath });
       const originalBranch = currentBranch.trim();
@@ -384,14 +388,40 @@ export class RealGitHubService implements IGitHubService {
         }
       }
 
-      // Force delete local branch if it exists
+      // Aggressively clean up local branch with multiple methods
       console.log(`[GitHub] Cleaning up any existing ${branchName} branch...`);
+
+      // Method 1: Standard branch delete
       try {
         await execAsync(`git branch -D ${branchName}`, { cwd: localPath });
-        console.log(`[GitHub] Deleted local branch ${branchName}`);
-      } catch (e) {
-        // Branch doesn't exist locally, that's fine
-        console.log(`[GitHub] No local branch ${branchName} to delete`);
+        console.log(`[GitHub] Deleted local branch ${branchName} (method 1)`);
+      } catch {
+        // Method 2: Use update-ref to force delete the ref
+        try {
+          await execAsync(`git update-ref -d refs/heads/${branchName}`, { cwd: localPath });
+          console.log(`[GitHub] Deleted local branch ${branchName} (method 2: update-ref)`);
+        } catch {
+          // Method 3: Remove stale lock files and packed-refs entries
+          try {
+            // Remove any lock files
+            await execAsync(`rm -f .git/refs/heads/${branchName}.lock`, { cwd: localPath });
+            // Try branch delete again
+            await execAsync(`git branch -D ${branchName}`, { cwd: localPath }).catch(() => {
+              // Method 4: Manually remove the ref file
+              execAsync(`rm -f .git/refs/heads/${branchName}`, { cwd: localPath }).catch(() => {});
+            });
+            console.log(`[GitHub] Cleaned up local branch ${branchName} (method 3: manual cleanup)`);
+          } catch {
+            console.log(`[GitHub] No local branch ${branchName} found or already cleaned`);
+          }
+        }
+      }
+
+      // Pack refs to clean up loose refs
+      try {
+        await execAsync(`git pack-refs --all`, { cwd: localPath });
+      } catch {
+        // Ignore pack-refs failures
       }
 
       // Delete remote branch if it exists (prevents non-fast-forward errors)
@@ -399,7 +429,7 @@ export class RealGitHubService implements IGitHubService {
         await execAsync(`git push origin --delete ${branchName}`, { cwd: localPath });
         console.log(`[GitHub] Deleted remote branch ${branchName}`);
       } catch (e) {
-        // Remote branch doesn't exist, that's fine
+        // Remote branch doesn't exist or already deleted
         console.log(`[GitHub] No remote branch ${branchName} to delete`);
       }
 
@@ -670,5 +700,64 @@ Closes #${issue.number}
       .replace(/`/g, '\\`')
       .replace(/\$/g, '\\$')
       .replace(/\n/g, '\\n');
+  }
+
+  /**
+   * Proactive cleanup of repository state to prevent git errors
+   * - Removes stale lock files
+   * - Resets any interrupted operations
+   * - Cleans up orphaned refs
+   */
+  private async cleanupRepoState(localPath: string): Promise<void> {
+    try {
+      // Remove common lock files that can cause issues
+      const lockFiles = [
+        '.git/index.lock',
+        '.git/HEAD.lock',
+        '.git/refs/heads/*.lock',
+        '.git/config.lock',
+      ];
+
+      for (const lockPattern of lockFiles) {
+        try {
+          await execAsync(`rm -f ${lockPattern}`, { cwd: localPath });
+        } catch {
+          // Ignore errors - lock files might not exist
+        }
+      }
+
+      // Reset any in-progress operations
+      try {
+        await execAsync('git reset --hard', { cwd: localPath });
+      } catch {
+        // Ignore if reset fails
+      }
+
+      // Clean up untracked files and directories
+      try {
+        await execAsync('git clean -fd', { cwd: localPath });
+      } catch {
+        // Ignore if clean fails
+      }
+
+      // Prune stale remote tracking branches
+      try {
+        await execAsync('git remote prune origin', { cwd: localPath });
+      } catch {
+        // Ignore if prune fails
+      }
+
+      // Pack refs to consolidate and clean up
+      try {
+        await execAsync('git pack-refs --all --prune', { cwd: localPath });
+      } catch {
+        // Ignore if pack-refs fails
+      }
+
+      console.log(`[GitHub] ✓ Repository cleanup completed`);
+    } catch (error) {
+      // Don't let cleanup errors stop the PR creation
+      console.log(`[GitHub] Warning: Some cleanup operations failed, continuing anyway`);
+    }
   }
 }
