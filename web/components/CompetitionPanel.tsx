@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AgentCard } from './AgentCard';
 import { cn } from '@/lib/utils';
 import type { Competition } from '@/lib/services';
@@ -17,6 +17,27 @@ import {
   Cpu,
   GitPullRequest,
 } from 'lucide-react';
+
+/**
+ * Animated dots component that cycles through ., .., ...
+ */
+function AnimatedDots() {
+  const [dots, setDots] = useState('.');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => {
+        if (prev === '.') return '..';
+        if (prev === '..') return '...';
+        return '.';
+      });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return <span className="inline-block w-6 text-left">{dots}</span>;
+}
 
 // RAG progress state
 interface RAGProgress {
@@ -329,7 +350,7 @@ function StatusMessage({
     return (
       <div className="text-center py-4 text-yellow-500 flex items-center justify-center gap-2">
         <Gavel className="w-5 h-5" />
-        AI judge is evaluating solutions...
+        AI judge is evaluating solutions<AnimatedDots />
       </div>
     );
   }
@@ -338,7 +359,7 @@ function StatusMessage({
     return (
       <div className="text-center py-4 text-cyan-500 flex items-center justify-center gap-2">
         <CreditCard className="w-5 h-5" />
-        Processing payment via X402...
+        Processing payment via X402<AnimatedDots />
       </div>
     );
   }

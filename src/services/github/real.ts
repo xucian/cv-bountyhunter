@@ -207,15 +207,40 @@ export class RealGitHubService implements IGitHubService {
       const { stdout: currentBranch } = await execAsync('git branch --show-current');
       const originalBranch = currentBranch.trim();
 
-      // Fetch latest and create branch from main/master
+      // Fetch latest and create branch from default branch
       await execAsync('git fetch origin');
 
-      // Try to create branch from origin/main or origin/master
+      // Get the default branch name
+      let defaultBranch = 'main';
       try {
-        await execAsync(`git checkout -b ${branchName} origin/main`);
+        const { stdout: remoteBranch } = await execAsync('git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || echo "refs/remotes/origin/main"');
+        defaultBranch = remoteBranch.trim().replace('refs/remotes/origin/', '');
       } catch {
-        await execAsync(`git checkout -b ${branchName} origin/master`);
+        // Try to detect from available branches
+        try {
+          await execAsync('git rev-parse --verify origin/main');
+          defaultBranch = 'main';
+        } catch {
+          try {
+            await execAsync('git rev-parse --verify origin/master');
+            defaultBranch = 'master';
+          } catch {
+            // Use current branch as base
+            const { stdout: current } = await execAsync('git branch --show-current');
+            defaultBranch = current.trim();
+          }
+        }
       }
+
+      // Delete branch if it already exists
+      try {
+        await execAsync(`git branch -D ${branchName}`);
+      } catch {
+        // Branch doesn't exist, that's fine
+      }
+
+      // Create branch from default branch
+      await execAsync(`git checkout -b ${branchName} origin/${defaultBranch}`);
 
       let solutionFile: string;
       let solutionContent: string;

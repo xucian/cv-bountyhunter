@@ -95,8 +95,10 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // POST /competitions/:id/pr - Create a PR from the winning solution
+  log('info', 'WS', `Checking route: ${req.method} ${req.url}`);
   const prMatch = req.url?.match(/^\/competitions\/([^/]+)\/pr$/);
   if (req.method === 'POST' && prMatch) {
+    log('info', 'WS', `Matched PR route for competition: ${prMatch[1]}`);
     const competitionId = prMatch[1];
     let body = '';
     req.on('data', chunk => body += chunk);
@@ -148,8 +150,9 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // 404
-  res.writeHead(404);
-  res.end('Not Found');
+  log('warn', 'WS', `404 Not Found: ${req.method} ${req.url}`);
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not Found', path: req.url }));
 });
 
 // Create WebSocket server attached to HTTP server
