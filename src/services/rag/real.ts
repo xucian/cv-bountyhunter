@@ -286,13 +286,15 @@ export class RealRAGService implements IRAGService {
       const queryEmbedding = response.data[0].embedding;
 
       // Vector search in MongoDB Atlas
-      onProgress?.('querying', `Running vector similarity search...`);
+      // CRITICAL: Filter by repoUrl to only search the current repository
+      onProgress?.('querying', `Running vector similarity search for ${issue.repoUrl}...`);
       const pipeline = [
         {
           $vectorSearch: {
             index: 'vector_index',
             path: 'embedding',
             queryVector: queryEmbedding,
+            filter: { repoUrl: issue.repoUrl }, // Only search this repo
             numCandidates: 100,
             limit: limit,
           },
@@ -443,6 +445,7 @@ export class RealRAGService implements IRAGService {
 
   /**
    * Parse Python file using regex (simpler than full AST parsing)
+   * Handles both top-level and indented classes/functions
    */
   private parsePythonFile(
     code: string,
@@ -455,19 +458,23 @@ export class RealRAGService implements IRAGService {
     while (i < lines.length) {
       const line = lines[i];
 
-      // Match class definitions: class ClassName:
-      const classMatch = line.match(/^class\s+(\w+)/);
+      // Match class definitions: class ClassName: (with optional indentation)
+      const classMatch = line.match(/^(\s*)class\s+(\w+)/);
       if (classMatch) {
-        const className = classMatch[1];
+        const indent = classMatch[1].length; // Get indentation level
+        const className = classMatch[2];
         const startLine = i;
-        const indent = line.search(/\S/);
 
         // Find the end of the class (next line with same or less indentation)
         i++;
         while (i < lines.length) {
           const currentLine = lines[i];
-          if (currentLine.trim() && currentLine.search(/\S/) <= indent) {
-            break;
+          // Stop if we find a non-empty line with same or less indentation
+          if (currentLine.trim()) {
+            const currentIndent = currentLine.search(/\S/);
+            if (currentIndent <= indent) {
+              break;
+            }
           }
           i++;
         }
@@ -482,19 +489,23 @@ export class RealRAGService implements IRAGService {
         continue;
       }
 
-      // Match function definitions: def function_name(
-      const funcMatch = line.match(/^def\s+(\w+)\s*\(/);
+      // Match function definitions: def function_name( (with optional indentation)
+      const funcMatch = line.match(/^(\s*)def\s+(\w+)\s*\(/);
       if (funcMatch) {
-        const funcName = funcMatch[1];
+        const indent = funcMatch[1].length; // Get indentation level
+        const funcName = funcMatch[2];
         const startLine = i;
-        const indent = line.search(/\S/);
 
         // Find the end of the function (next line with same or less indentation)
         i++;
         while (i < lines.length) {
           const currentLine = lines[i];
-          if (currentLine.trim() && currentLine.search(/\S/) <= indent) {
-            break;
+          // Stop if we find a non-empty line with same or less indentation
+          if (currentLine.trim()) {
+            const currentIndent = currentLine.search(/\S/);
+            if (currentIndent <= indent) {
+              break;
+            }
           }
           i++;
         }

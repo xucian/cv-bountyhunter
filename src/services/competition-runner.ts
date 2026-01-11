@@ -1,4 +1,8 @@
 import { nanoid } from 'nanoid';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { execSync } from 'child_process';
+import { existsSync, mkdirSync } from 'fs';
 import type { Services } from '../types/services.js';
 import type { Competition, Issue, Solution, AgentStatus, PaymentRecord } from '../types/index.js';
 import type { CompetitionEvent } from '../types/events.js';
@@ -71,16 +75,69 @@ export class CompetitionRunner {
       payload: { competition: { ...competition, status: 'running' } },
     });
 
-    // Phase 1.5: RAG - Query relevant code
+    // Phase 1.5: RAG - Clone, Index, and Query relevant code
     let relevantCode: CodeChunk[] = [];
     try {
+      // Step 1: Clone repository
       await this.emitEvent({
         type: 'rag:indexing',
         competitionId: competition.id,
         timestamp: Date.now(),
         payload: {
           repoUrl: competition.issue.repoUrl,
-          message: `Searching for relevant code in ${competition.issue.repoUrl}...`,
+          message: `Cloning repository ${competition.issue.repoUrl}...`,
+        },
+      });
+
+      log('info', 'CompetitionRunner', `Cloning repository: ${competition.issue.repoUrl}`);
+      const repoPath = await this.cloneRepository(competition.issue.repoUrl);
+      log('info', 'CompetitionRunner', `Repository cloned to: ${repoPath}`);
+
+      // Step 2: Index repository
+      await this.emitEvent({
+        type: 'rag:indexing',
+        competitionId: competition.id,
+        timestamp: Date.now(),
+        payload: {
+          repoUrl: competition.issue.repoUrl,
+          message: `Indexing repository code...`,
+        },
+      });
+
+      log('info', 'CompetitionRunner', `Indexing repository: ${repoPath}`);
+      const { commitId, chunksIndexed } = await rag.indexRepo(
+        repoPath,
+        competition.issue.repoUrl,
+        (stage, message, current, total) => {
+          this.emitEvent({
+            type: 'rag:progress',
+            competitionId: competition.id,
+            timestamp: Date.now(),
+            payload: { stage, message, current, total },
+          });
+        }
+      );
+
+      log('info', 'CompetitionRunner', `Indexed ${chunksIndexed} chunks (commit: ${commitId})`);
+
+      await this.emitEvent({
+        type: 'rag:indexing',
+        competitionId: competition.id,
+        timestamp: Date.now(),
+        payload: {
+          repoUrl: competition.issue.repoUrl,
+          message: `Indexed ${chunksIndexed} code chunks from commit ${commitId.slice(0, 8)}`,
+        },
+      });
+
+      // Step 3: Query relevant code
+      await this.emitEvent({
+        type: 'rag:indexing',
+        competitionId: competition.id,
+        timestamp: Date.now(),
+        payload: {
+          repoUrl: competition.issue.repoUrl,
+          message: `Searching for relevant code...`,
         },
       });
 
@@ -109,14 +166,14 @@ export class CompetitionRunner {
 
       log('info', 'CompetitionRunner', `Found ${relevantCode.length} relevant code chunks`);
     } catch (error) {
-      log('warn', 'CompetitionRunner', `RAG query failed: ${error}`);
+      log('warn', 'CompetitionRunner', `RAG failed: ${error}`);
       await this.emitEvent({
         type: 'rag:complete',
         competitionId: competition.id,
         timestamp: Date.now(),
         payload: {
           chunksFound: 0,
-          message: `RAG query failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          message: `RAG failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         },
       });
     }
@@ -456,10 +513,52 @@ Provide a complete code solution to fix this issue. Your solution should:
   /**
    * Calculate bounty based on issue (random for testnet)
    */
-  private calculateBounty(issue: Issue): number {
+  private calculateBounty(_issue: Issue): number {
     const min = 0.01;
     const max = 0.05;
     return Math.round((min + Math.random() * (max - min)) * 100) / 100;
+  }
+
+  /**
+   * Clone a GitHub repository to a temporary directory
+   * Uses a deterministic path based on repo name for caching
+   */
+  private async cloneRepository(repoUrl: string): Promise<string> {
+    // Extract repo name from URL (e.g., "https://github.com/psf/requests" -> "psf-requests")
+    const repoName = repoUrl
+      .replace(/^https?:\/\//, '')
+      .replace(/\.git$/, '')
+      .replace(/github\.com\//, '')
+      .replace(/\//g, '-');
+
+    // Create temp directory for codebounty repos
+    const codebountyDir = join(tmpdir(), 'codebounty-repos');
+    if (!existsSync(codebountyDir)) {
+      mkdirSync(codebountyDir, { recursive: true });
+    }
+
+    const repoPath = join(codebountyDir, repoName);
+
+    // If repo already exists, pull latest changes instead of re-cloning
+    if (existsSync(repoPath)) {
+      log('info', 'CompetitionRunner', `Repository already exists, pulling latest changes...`);
+      try {
+        execSync('git pull', { cwd: repoPath, stdio: 'pipe' });
+        return repoPath;
+      } catch (error) {
+        log('warn', 'CompetitionRunner', `Failed to pull, will re-clone: ${error}`);
+        // If pull fails, remove and re-clone
+        execSync(`rm -rf "${repoPath}"`, { stdio: 'pipe' });
+      }
+    }
+
+    // Clone the repository
+    log('info', 'CompetitionRunner', `Cloning fresh copy...`);
+    execSync(`git clone --depth 1 "${repoUrl}" "${repoPath}"`, {
+      stdio: 'pipe',
+    });
+
+    return repoPath;
   }
 
   /**
