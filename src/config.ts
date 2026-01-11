@@ -112,6 +112,7 @@ export const config = {
     facilitatorUrl: process.env.X402_FACILITATOR_URL || 'https://x402.coinbase.com',
     // Base Sepolia testnet USDC by default
     usdcAddress: process.env.USDC_CONTRACT_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    rpcUrl: process.env.RPC_URL || '',
   },
 
   // CDP (Coinbase Developer Platform) Configuration

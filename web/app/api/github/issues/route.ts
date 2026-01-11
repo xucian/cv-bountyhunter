@@ -11,14 +11,15 @@ const execAsync = promisify(exec);
 function parseRepoUrl(url: string): string | null {
   // Handle various GitHub URL formats
   const patterns = [
-    /github\.com[\/:]([^\/]+\/[^\/\.]+)/,  // https://github.com/owner/repo or git@github.com:owner/repo
-    /^([^\/]+\/[^\/]+)$/,                   // owner/repo
+    /github\.com[\/:]([^\/]+\/[^\/]+?)(?:\.git)?$/,  // https://github.com/owner/repo or git@github.com:owner/repo
+    /^([^\/]+\/[^\/]+)$/,                             // owner/repo
   ];
 
   for (const pattern of patterns) {
     const match = url.match(pattern);
     if (match) {
-      return match[1].replace(/\.git$/, '');
+      // Remove trailing slash and .git suffix
+      return match[1].replace(/\.git$/, '').replace(/\/$/, '');
     }
   }
   return null;
@@ -48,9 +49,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Use gh CLI to list issues
+    // Use gh CLI to list issues (use full path to ensure it's found)
+    const ghPath = process.env.GH_PATH || 'gh';
     const { stdout } = await execAsync(
-      `gh issue list --repo ${repo} --state open --limit 20 --json number,title,body,labels`
+      `${ghPath} issue list --repo ${repo} --state open --limit 20 --json number,title,body,labels`,
+      { env: { ...process.env, PATH: `${process.env.PATH}:/opt/homebrew/bin:/usr/local/bin` } }
     );
 
     const rawIssues = JSON.parse(stdout) as Array<{
@@ -118,9 +121,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create issue using gh CLI
+    // Create issue using gh CLI (use full path to ensure it's found)
+    const ghPath = process.env.GH_PATH || 'gh';
     const { stdout } = await execAsync(
-      `gh issue create --repo ${repo} --title "${title.replace(/"/g, '\\"')}" --body "${(issueBody || 'Created via Bounty Hunter').replace(/"/g, '\\"')}" --json number,title,body,labels`
+      `${ghPath} issue create --repo ${repo} --title "${title.replace(/"/g, '\\"')}" --body "${(issueBody || 'Created via Bounty Hunter').replace(/"/g, '\\"')}" --json number,title,body,labels`,
+      { env: { ...process.env, PATH: `${process.env.PATH}:/opt/homebrew/bin:/usr/local/bin` } }
     );
 
     const rawIssue = JSON.parse(stdout) as {

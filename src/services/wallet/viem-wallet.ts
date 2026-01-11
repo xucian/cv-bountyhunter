@@ -66,17 +66,27 @@ export class ViemWalletService implements IWalletService {
     this.chain = network === 'base' ? base : baseSepolia;
     this.usdcAddress = config.x402.usdcAddress as `0x${string}`;
 
+    // Use reliable Base RPC URLs (official public endpoints)
+    const rpcUrl = config.x402.rpcUrl ||
+      (network === 'base' ? 'https://mainnet.base.org' : 'https://sepolia.base.org');
+
+    console.log(`[ViemWallet] Using RPC: ${rpcUrl}`);
+
     // Create wallet client for signing transactions
     this.walletClient = createWalletClient({
       account: this.account,
       chain: this.chain,
-      transport: http(),
+      transport: http(rpcUrl, {
+        timeout: 30_000, // 30s timeout for RPC calls
+      }),
     });
 
     // Create public client for reading chain state
     this.publicClient = createPublicClient({
       chain: this.chain,
-      transport: http(),
+      transport: http(rpcUrl, {
+        timeout: 30_000, // 30s timeout for RPC calls
+      }),
     });
 
     console.log(`[ViemWallet] Initialized on ${network}`);
@@ -106,12 +116,17 @@ export class ViemWalletService implements IWalletService {
   }
 
   async sendUSDC(to: string, amount: number): Promise<string> {
+    console.log(`[ViemWallet] ===== PAYMENT START =====`);
     console.log(`[ViemWallet] Sending ${amount} USDC to ${to}`);
+    console.log(`[ViemWallet] From: ${this.account.address}`);
+    console.log(`[ViemWallet] Network: ${this.chain.name}`);
+    console.log(`[ViemWallet] USDC Contract: ${this.usdcAddress}`);
 
     try {
       // Check ETH balance for gas
+      console.log(`[ViemWallet] [1/5] Checking ETH balance...`);
       const ethBalance = await this.getEthBalance();
-      console.log(`[ViemWallet] ETH balance for gas: ${ethBalance.toFixed(6)} ETH`);
+      console.log(`[ViemWallet] ✓ ETH balance: ${ethBalance.toFixed(6)} ETH`);
 
       if (ethBalance < 0.0001) {
         throw new Error(
@@ -120,7 +135,17 @@ export class ViemWalletService implements IWalletService {
         );
       }
 
+      // Check USDC balance
+      console.log(`[ViemWallet] [2/5] Checking USDC balance...`);
+      const usdcBalance = await this.getBalance();
+      console.log(`[ViemWallet] ✓ USDC balance: ${usdcBalance} USDC`);
+
+      if (usdcBalance < amount) {
+        throw new Error(`Insufficient USDC: ${usdcBalance} < ${amount}`);
+      }
+
       // Convert amount to USDC units (6 decimals)
+      console.log(`[ViemWallet] [3/5] Encoding transaction...`);
       const amountInUnits = parseUnits(amount.toString(), 6);
 
       // Encode the transfer call
@@ -129,32 +154,41 @@ export class ViemWalletService implements IWalletService {
         functionName: 'transfer',
         args: [to as `0x${string}`, amountInUnits],
       });
+      console.log(`[ViemWallet] ✓ Transaction encoded`);
 
       // Send the transaction
+      console.log(`[ViemWallet] [4/5] Sending transaction to RPC...`);
+      const startSend = Date.now();
       const hash = await this.walletClient.sendTransaction({
         to: this.usdcAddress,
         data,
         chain: this.chain,
         account: this.account,
       });
-
-      console.log(`[ViemWallet] Transaction sent: ${hash}`);
+      const sendMs = Date.now() - startSend;
+      console.log(`[ViemWallet] ✓ Transaction sent in ${sendMs}ms: ${hash}`);
 
       // Wait for confirmation with timeout
-      console.log(`[ViemWallet] Waiting for confirmation (60s timeout)...`);
+      console.log(`[ViemWallet] [5/5] Waiting for confirmation (60s timeout)...`);
+      const startWait = Date.now();
       const receipt = await this.publicClient.waitForTransactionReceipt({
         hash,
         timeout: 60_000, // 60 second timeout
       });
+      const waitMs = Date.now() - startWait;
 
       if (receipt.status === 'success') {
-        console.log(`[ViemWallet] Transaction confirmed in block ${receipt.blockNumber}`);
+        console.log(`[ViemWallet] ✓ Transaction confirmed in ${waitMs}ms`);
+        console.log(`[ViemWallet] Block: ${receipt.blockNumber}`);
+        console.log(`[ViemWallet] Gas used: ${receipt.gasUsed}`);
+        console.log(`[ViemWallet] ===== PAYMENT SUCCESS =====`);
         return hash;
       } else {
         throw new Error('Transaction reverted');
       }
     } catch (error) {
-      console.error('[ViemWallet] Failed to send USDC:', error);
+      console.error('[ViemWallet] ===== PAYMENT FAILED =====');
+      console.error('[ViemWallet] Error:', error);
       throw error;
     }
   }

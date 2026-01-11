@@ -166,6 +166,19 @@ export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
         </div>
       )}
 
+      {/* No Issues Found */}
+      {!loading && !error && issues.length === 0 && lastLoadedUrl.current && (
+        <div className="p-4 bg-muted/50 border border-border rounded-md text-muted-foreground text-sm text-center">
+          No open issues found in this repository.
+          <button
+            onClick={() => setShowNewIssue(true)}
+            className="ml-2 text-primary hover:underline"
+          >
+            Create one?
+          </button>
+        </div>
+      )}
+
       {/* Issues List */}
       {issues.length > 0 && (
         <div>
