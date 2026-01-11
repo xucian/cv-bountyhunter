@@ -1,4 +1,8 @@
 import { nanoid } from 'nanoid';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { execSync } from 'child_process';
+import { existsSync, mkdirSync } from 'fs';
 import type { Services } from '../types/services.js';
 import type { Competition, Issue, AgentStatus, SolveTask, Solution, PaymentRecord, TaskEvaluation } from '../types/index.js';
 import type { CodeChunk } from '../types/services.js';
@@ -29,11 +33,13 @@ export class Orchestrator {
     const issue = await this.services.github.getIssue(repoUrl, issueNumber);
     console.log('[Orchestrator] Issue fetched:', issue.title);
 
-    // 2. Index repository FIRST (fail fast pattern - if indexing fails, no competition is created)
-    const currentDir = process.cwd();
-    console.log(`[Orchestrator] Indexing repository at ${currentDir}`);
+    // 2. Clone and index the user's repository (fail fast pattern - if cloning/indexing fails, no competition is created)
+    console.log(`[Orchestrator] Cloning repository: ${repoUrl}`);
+    const repoPath = await this.cloneRepository(repoUrl);
+    console.log(`[Orchestrator] Repository cloned to: ${repoPath}`);
 
-    const { commitId, chunksIndexed } = await this.services.rag.indexRepo(currentDir, repoUrl);
+    console.log(`[Orchestrator] Indexing repository...`);
+    const { commitId, chunksIndexed } = await this.services.rag.indexRepo(repoPath, repoUrl);
     console.log(`[Orchestrator] Repository indexed: ${chunksIndexed} chunks (commit: ${commitId})`);
 
     // 3. Query relevant code context
@@ -388,6 +394,48 @@ export class Orchestrator {
    */
   async getCompetition(id: string): Promise<Competition | null> {
     return this.services.state.getCompetition(id);
+  }
+
+  /**
+   * Clone a GitHub repository to a temporary directory
+   * Uses a deterministic path based on repo name for caching
+   */
+  private async cloneRepository(repoUrl: string): Promise<string> {
+    // Extract repo name from URL (e.g., "https://github.com/psf/requests" -> "psf-requests")
+    const repoName = repoUrl
+      .replace(/^https?:\/\//, '')
+      .replace(/\.git$/, '')
+      .replace(/github\.com\//, '')
+      .replace(/\//g, '-');
+
+    // Create temp directory for codebounty repos
+    const codebountyDir = join(tmpdir(), 'codebounty-repos');
+    if (!existsSync(codebountyDir)) {
+      mkdirSync(codebountyDir, { recursive: true });
+    }
+
+    const repoPath = join(codebountyDir, repoName);
+
+    // If repo already exists, pull latest changes instead of re-cloning
+    if (existsSync(repoPath)) {
+      console.log(`[Orchestrator] Repository already exists, pulling latest changes...`);
+      try {
+        execSync('git pull', { cwd: repoPath, stdio: 'pipe' });
+        return repoPath;
+      } catch (error) {
+        console.warn(`[Orchestrator] Failed to pull, will re-clone:`, error);
+        // If pull fails, remove and re-clone
+        execSync(`rm -rf "${repoPath}"`, { stdio: 'pipe' });
+      }
+    }
+
+    // Clone the repository
+    console.log(`[Orchestrator] Cloning fresh copy...`);
+    execSync(`git clone --depth 1 "${repoUrl}" "${repoPath}"`, {
+      stdio: 'pipe',
+    });
+
+    return repoPath;
   }
 
   /**

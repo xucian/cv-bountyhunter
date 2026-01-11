@@ -112,45 +112,90 @@ export class RealRAGService implements IRAGService {
     console.log(`[RealRAG] Indexing ${repoUrl} (commit: ${commitId})`);
 
     // Check if already indexed
+    console.log(`[RealRAG] Checking if repo is already indexed...`);
+    console.log(`[RealRAG]   - repoUrl: ${repoUrl}`);
+    console.log(`[RealRAG]   - commitId: ${commitId}`);
     const alreadyIndexed = await this.isRepoIndexed(repoUrl, commitId);
     if (alreadyIndexed) {
       const count = await this.chunksCollection!.countDocuments({ repoUrl, commitId });
-      console.log(`[RealRAG] Repo already indexed (${count} chunks found)`);
+      console.log(`[RealRAG] ✓ Repo already indexed (${count} chunks found) - SKIPPING INDEXING`);
       return { commitId, chunksIndexed: count };
     }
+    console.log(`[RealRAG] ✗ Repo not indexed, proceeding with fresh indexing...`);
 
     // Find all source files
+    console.log(`[RealRAG] Scanning repository for source files...`);
+    console.log(`[RealRAG]   - repoPath: ${repoPath}`);
     const files = this.findSourceFiles(repoPath);
-    console.log(`[RealRAG] Found ${files.length} source files`);
+    console.log(`[RealRAG] ✓ Found ${files.length} source files to parse`);
+    if (files.length > 0 && files.length <= 10) {
+      console.log(`[RealRAG] Files to parse:`);
+      files.forEach(f => console.log(`[RealRAG]   - ${path.relative(repoPath, f)}`));
+    } else if (files.length > 10) {
+      console.log(`[RealRAG] First 10 files to parse:`);
+      files.slice(0, 10).forEach(f => console.log(`[RealRAG]   - ${path.relative(repoPath, f)}`));
+      console.log(`[RealRAG]   ... and ${files.length - 10} more`);
+    }
 
     // Parse and chunk
+    console.log(`[RealRAG] Starting AST parsing and chunking...`);
     const allChunks: Array<Omit<CodeChunkDocument, 'embedding' | 'indexedAt' | 'repoUrl' | 'commitId'>> = [];
+    let parsedCount = 0;
+    let failedCount = 0;
+
     for (const file of files) {
       const chunks = this.parseFile(file, repoPath);
-      allChunks.push(...chunks);
+      if (chunks.length > 0) {
+        allChunks.push(...chunks);
+        parsedCount++;
+        if (parsedCount <= 5 || parsedCount % 50 === 0) {
+          console.log(`[RealRAG] Parsed ${parsedCount}/${files.length}: ${path.relative(repoPath, file)} → ${chunks.length} chunks`);
+        }
+      } else {
+        failedCount++;
+      }
     }
-    console.log(`[RealRAG] Extracted ${allChunks.length} code chunks`);
+
+    console.log(`[RealRAG] ✓ Parsing complete:`);
+    console.log(`[RealRAG]   - Successfully parsed: ${parsedCount} files`);
+    console.log(`[RealRAG]   - Failed/No chunks: ${failedCount} files`);
+    console.log(`[RealRAG]   - Total chunks extracted: ${allChunks.length}`);
 
     if (allChunks.length === 0) {
-      console.log('[RealRAG] No chunks extracted, skipping embedding');
+      console.log('[RealRAG] ⚠️  WARNING: No chunks extracted, skipping embedding');
+      console.log('[RealRAG]   This likely means:');
+      console.log('[RealRAG]   - The repo has no .ts/.tsx/.js/.jsx/.py files, OR');
+      console.log('[RealRAG]   - All files failed to parse (check syntax errors)');
+      console.log('[RealRAG]   - Files had no extractable functions/classes');
       return { commitId, chunksIndexed: 0 };
     }
 
     // Generate embeddings in batches
+    console.log(`[RealRAG] Starting embedding generation...`);
     const batchSize = 128; // Voyage AI supports up to 128 texts per request
+    const totalBatches = Math.ceil(allChunks.length / batchSize);
+    console.log(`[RealRAG]   - Total chunks: ${allChunks.length}`);
+    console.log(`[RealRAG]   - Batch size: ${batchSize}`);
+    console.log(`[RealRAG]   - Total batches: ${totalBatches}`);
+
     const documents: CodeChunkDocument[] = [];
 
     for (let i = 0; i < allChunks.length; i += batchSize) {
       const batch = allChunks.slice(i, i + batchSize);
       const texts = batch.map(c => c.code);
+      const batchNum = Math.floor(i / batchSize) + 1;
 
-      console.log(`[RealRAG] Embedding batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(allChunks.length / batchSize)}...`);
+      console.log(`[RealRAG] Embedding batch ${batchNum}/${totalBatches} (${batch.length} chunks)...`);
 
       try {
+        const startTime = Date.now();
         const response = await this.voyageClient.embed({
           input: texts,
           model: config.voyage.model,
         });
+        const elapsedMs = Date.now() - startTime;
+
+        console.log(`[RealRAG] ✓ Batch ${batchNum} embedded in ${elapsedMs}ms`);
 
         // Combine chunks with embeddings
         for (let j = 0; j < batch.length; j++) {
@@ -163,15 +208,18 @@ export class RealRAGService implements IRAGService {
           });
         }
       } catch (error) {
-        console.error(`[RealRAG] Failed to embed batch ${Math.floor(i / batchSize) + 1}:`, error);
+        console.error(`[RealRAG] ✗ Failed to embed batch ${batchNum}:`, error);
         throw error;
       }
     }
 
     // Insert into MongoDB
+    console.log(`[RealRAG] Inserting ${documents.length} documents into MongoDB...`);
     if (documents.length > 0) {
+      const startTime = Date.now();
       await this.chunksCollection!.insertMany(documents);
-      console.log(`[RealRAG] ✓ Indexed ${documents.length} chunks to MongoDB Atlas`);
+      const elapsedMs = Date.now() - startTime;
+      console.log(`[RealRAG] ✓ Indexed ${documents.length} chunks to MongoDB Atlas in ${elapsedMs}ms`);
     }
 
     return { commitId, chunksIndexed: documents.length };
@@ -254,8 +302,8 @@ export class RealRAGService implements IRAGService {
    */
   private findSourceFiles(repoPath: string): string[] {
     const files: string[] = [];
-    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
-    const excludeDirs = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'out'];
+    const extensions = ['.ts', '.tsx', '.js', '.jsx', '.py'];
+    const excludeDirs = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'out', '__pycache__', '.venv', 'venv'];
 
     const walk = (dir: string) => {
       try {
@@ -282,7 +330,7 @@ export class RealRAGService implements IRAGService {
   }
 
   /**
-   * Parse a file and extract code chunks using AST
+   * Parse a file and extract code chunks using AST (for JS/TS) or regex (for Python)
    */
   private parseFile(
     filePath: string,
@@ -294,7 +342,12 @@ export class RealRAGService implements IRAGService {
       const code = fs.readFileSync(filePath, 'utf-8');
       const relativePath = path.relative(repoPath, filePath);
 
-      // Parse with Babel
+      // Handle Python files with regex-based parsing
+      if (filePath.endsWith('.py')) {
+        return this.parsePythonFile(code, relativePath);
+      }
+
+      // Parse JS/TS with Babel
       const ast = parser.parse(code, {
         sourceType: 'module',
         plugins: ['typescript', 'jsx'],
@@ -344,13 +397,84 @@ export class RealRAGService implements IRAGService {
   }
 
   /**
-   * Close MongoDB connection
+   * Parse Python file using regex (simpler than full AST parsing)
+   */
+  private parsePythonFile(
+    code: string,
+    relativePath: string
+  ): Array<Omit<CodeChunkDocument, 'embedding' | 'indexedAt' | 'repoUrl' | 'commitId'>> {
+    const chunks: Array<Omit<CodeChunkDocument, 'embedding' | 'indexedAt' | 'repoUrl' | 'commitId'>> = [];
+    const lines = code.split('\n');
+
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Match class definitions: class ClassName:
+      const classMatch = line.match(/^class\s+(\w+)/);
+      if (classMatch) {
+        const className = classMatch[1];
+        const startLine = i;
+        const indent = line.search(/\S/);
+
+        // Find the end of the class (next line with same or less indentation)
+        i++;
+        while (i < lines.length) {
+          const currentLine = lines[i];
+          if (currentLine.trim() && currentLine.search(/\S/) <= indent) {
+            break;
+          }
+          i++;
+        }
+
+        const classCode = lines.slice(startLine, i).join('\n');
+        chunks.push({
+          filePath: relativePath,
+          chunkType: 'class',
+          chunkName: className,
+          code: classCode,
+        });
+        continue;
+      }
+
+      // Match function definitions: def function_name(
+      const funcMatch = line.match(/^def\s+(\w+)\s*\(/);
+      if (funcMatch) {
+        const funcName = funcMatch[1];
+        const startLine = i;
+        const indent = line.search(/\S/);
+
+        // Find the end of the function (next line with same or less indentation)
+        i++;
+        while (i < lines.length) {
+          const currentLine = lines[i];
+          if (currentLine.trim() && currentLine.search(/\S/) <= indent) {
+            break;
+          }
+          i++;
+        }
+
+        const funcCode = lines.slice(startLine, i).join('\n');
+        chunks.push({
+          filePath: relativePath,
+          chunkType: 'function',
+          chunkName: funcName,
+          code: funcCode,
+        });
+        continue;
+      }
+
+      i++;
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Close MongoDB connection (no-op since we use SharedMongoClient)
    */
   async close(): Promise<void> {
-    if (this.mongoClient) {
-      await this.mongoClient.close();
-      this.connected = false;
-      console.log('[RealRAG] Disconnected from MongoDB');
-    }
+    // SharedMongoClient manages the connection lifecycle
+    this.connected = false;
   }
 }
