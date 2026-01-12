@@ -256,6 +256,62 @@ export class RealRAGService implements IRAGService {
       const elapsedMs = Date.now() - startTime;
       console.log(`[RealRAG] ✓ Indexed ${documents.length} chunks to MongoDB Atlas in ${elapsedMs}ms`);
       onProgress?.('embedding', `✓ Indexed ${documents.length} chunks to MongoDB Atlas`);
+
+      // CRITICAL: Wait for vector index to update (MongoDB Atlas vector indexes update asynchronously)
+      // According to MongoDB: "typically under 1 second" - we wait 2s to be safe
+      console.log(`[RealRAG] Verifying chunks are searchable...`);
+
+      // Step 1: Verify documents exist in collection (instant check)
+      const insertedCount = await this.chunksCollection!.countDocuments({ repoUrl, commitId });
+      console.log(`[RealRAG] ✓ ${insertedCount}/${documents.length} documents confirmed in collection`);
+
+      if (insertedCount !== documents.length) {
+        console.warn(`[RealRAG] ⚠️ Insert verification warning: expected ${documents.length}, found ${insertedCount}`);
+      }
+
+      // Step 2: Wait for vector index to update (async background process)
+      console.log(`[RealRAG] Waiting 2 seconds for vector index to update...`);
+      onProgress?.('embedding', `Waiting for vector index to update...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Step 3: Verify chunks are actually searchable via vector search
+      console.log(`[RealRAG] Testing vector search for newly indexed chunks...`);
+      try {
+        // Use first chunk's code as test query
+        const testText = documents[0].code.slice(0, 200);
+        const testResponse = await this.voyageClient!.embed({
+          input: [testText],
+          model: config.voyage.model,
+        });
+        const testEmbedding = testResponse.data[0].embedding;
+
+        const testPipeline = [
+          {
+            $vectorSearch: {
+              index: 'vector_index',
+              path: 'embedding',
+              queryVector: testEmbedding,
+              filter: { repoUrl, commitId }, // Only search our newly inserted chunks
+              numCandidates: 10,
+              limit: 1,
+            },
+          },
+        ];
+
+        const testResults = await this.chunksCollection!.aggregate(testPipeline).toArray();
+
+        if (testResults.length > 0) {
+          console.log(`[RealRAG] ✓ Vector search verified: chunks are searchable for commit ${commitId.slice(0, 8)}`);
+          onProgress?.('embedding', `✓ Vector search verified and ready`);
+        } else {
+          console.warn(`[RealRAG] ⚠️ Vector search returned 0 results for new chunks - index may need more time`);
+          console.warn(`[RealRAG] ⚠️ Chunks exist in DB but may not be immediately searchable`);
+          onProgress?.('embedding', `⚠️ Index updating - chunks may not be immediately searchable`);
+        }
+      } catch (error) {
+        console.warn(`[RealRAG] Could not verify vector search readiness:`, error);
+        console.warn(`[RealRAG] Continuing anyway - chunks should become searchable soon`);
+      }
     }
 
     return { commitId, chunksIndexed: documents.length };
@@ -314,6 +370,22 @@ export class RealRAGService implements IRAGService {
       const results = await this.chunksCollection!.aggregate(pipeline).toArray();
       console.log(`[RealRAG] Found ${results.length} relevant chunks`);
       onProgress?.('querying', `Found ${results.length} relevant code chunks`);
+
+      // Fallback detection: If vector search returns 0 but documents exist, index may not be ready
+      if (results.length === 0) {
+        console.log(`[RealRAG] Vector search returned 0 results, verifying if chunks exist in collection...`);
+        const totalChunks = await this.chunksCollection!.countDocuments({ repoUrl: issue.repoUrl });
+
+        if (totalChunks > 0) {
+          console.warn(`[RealRAG] ⚠️ IMPORTANT: Found ${totalChunks} chunks in DB for ${issue.repoUrl}`);
+          console.warn(`[RealRAG] ⚠️ Vector search returned 0 - the vector index may still be updating`);
+          console.warn(`[RealRAG] ⚠️ This happens when chunks were just indexed (background async update)`);
+          console.warn(`[RealRAG] ⚠️ Chunks should become searchable within 1-2 seconds`);
+          onProgress?.('querying', `⚠️ ${totalChunks} chunks exist but vector index may still be updating`);
+        } else {
+          console.log(`[RealRAG] ✓ Confirmed: No chunks indexed for this repository yet`);
+        }
+      }
 
       return results as CodeChunk[];
     } catch (error) {
