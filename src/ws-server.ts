@@ -10,6 +10,7 @@
  *   bun run ws      # or: npx tsx src/ws-server.ts
  */
 
+import 'dotenv/config';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import { createServices } from './services/index.js';
