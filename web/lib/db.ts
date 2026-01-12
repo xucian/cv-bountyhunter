@@ -89,3 +89,35 @@ export async function updateCompetition(
   const collection = await getCompetitionsCollection();
   await collection.updateOne({ id }, { $set: updates });
 }
+
+/**
+ * Get all payments for an agent (sorted by newest first)
+ */
+export async function getPaymentsByAgent(agentId: string): Promise<PaymentRecord[]> {
+  const collection = await getPaymentsCollection();
+  return collection
+    .find({ agentId })
+    .sort({ createdAt: -1 })
+    .toArray();
+}
+
+/**
+ * Get agent stats from payments collection
+ */
+export async function getAgentPaymentStats(agentId: string): Promise<{
+  totalEarnings: number;
+  confirmedPayments: number;
+  pendingPayments: number;
+}> {
+  const collection = await getPaymentsCollection();
+  const payments = await collection.find({ agentId }).toArray();
+  
+  return {
+    totalEarnings: payments
+      .filter(p => p.status === 'confirmed')
+      .reduce((sum, p) => sum + p.amount, 0),
+    confirmedPayments: payments.filter(p => p.status === 'confirmed').length,
+    pendingPayments: payments.filter(p => p.status === 'pending').length,
+  };
+}
+

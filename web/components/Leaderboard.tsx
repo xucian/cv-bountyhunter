@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import type { Competition } from '@/lib/services';
 import { agents } from '@/lib/services';
@@ -113,11 +114,12 @@ export function Leaderboard({ competitions }: LeaderboardProps) {
             : 0;
 
           return (
-            <div
+            <Link
               key={agent.id}
+              href={`/agents/${agent.id}`}
               className={cn(
-                'grid grid-cols-7 gap-2 p-3 items-center border-t border-border',
-                index === 0 && 'bg-yellow-500/5'
+                'grid grid-cols-7 gap-2 p-3 items-center border-t border-border cursor-pointer transition-colors hover:bg-muted/50',
+                index === 0 && 'bg-yellow-500/5 hover:bg-yellow-500/10'
               )}
             >
               {/* Rank */}
@@ -164,7 +166,7 @@ export function Leaderboard({ competitions }: LeaderboardProps) {
               <div className="text-right font-mono text-muted-foreground">
                 {agent.avgScore.toFixed(1)}
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
