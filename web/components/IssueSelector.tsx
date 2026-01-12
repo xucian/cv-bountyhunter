@@ -6,7 +6,7 @@ import type { Issue } from '@/lib/services';
 import { Loader2, Search, Plus, ExternalLink } from 'lucide-react';
 
 interface IssueSelectorProps {
-  onSelectIssue: (issue: Issue) => void;
+  onSelectIssue: (issue: Issue, autoCreatePR: boolean) => void;
   disabled?: boolean;
 }
 
@@ -37,6 +37,7 @@ export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const lastLoadedUrl = useRef<string>('');
+  const [autoCreatePR, setAutoCreatePR] = useState(true);
 
   // Debounce repo URL by 800ms to avoid searching while typing
   const debouncedRepoUrl = useDebounce(repoUrl, 800);
@@ -129,7 +130,8 @@ export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
 
   const handleStart = () => {
     if (selectedIssue) {
-      onSelectIssue(selectedIssue);
+      console.log('[IssueSelector] Starting competition with issue:', selectedIssue.number, 'autoCreatePR:', autoCreatePR);
+      onSelectIssue(selectedIssue, autoCreatePR);
     }
   };
 
@@ -277,6 +279,24 @@ export function IssueSelector({ onSelectIssue, disabled }: IssueSelectorProps) {
           </button>
         </div>
       )}
+
+      {/* Auto-create PR checkbox */}
+      <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-md">
+        <input
+          type="checkbox"
+          id="auto-create-pr"
+          checked={autoCreatePR}
+          onChange={(e) => setAutoCreatePR(e.target.checked)}
+          disabled={disabled}
+          className="w-4 h-4 text-primary bg-muted border-border rounded focus:ring-2 focus:ring-primary cursor-pointer disabled:cursor-not-allowed"
+        />
+        <label htmlFor="auto-create-pr" className="text-sm text-foreground cursor-pointer select-none flex-1">
+          Automatically create pull request when winner is selected
+        </label>
+        {autoCreatePR && (
+          <span className="text-xs text-green-500">✓ Enabled</span>
+        )}
+      </div>
 
       {/* Start Button */}
       {selectedIssue && (

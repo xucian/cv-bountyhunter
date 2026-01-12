@@ -55,14 +55,15 @@ export default function Home() {
     }
   };
 
-  const handleStartCompetition = async (issue: Issue) => {
+  const handleStartCompetition = async (issue: Issue, autoCreatePR: boolean) => {
+    console.log('[Web] Starting competition with autoCreatePR:', autoCreatePR);
     setStarting(true);
 
     try {
       const res = await fetch('/api/competitions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ issue }),
+        body: JSON.stringify({ issue, autoCreatePR }),
       });
 
       const data = await res.json();

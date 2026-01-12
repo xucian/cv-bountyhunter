@@ -67,6 +67,8 @@ export interface Competition {
   paymentTxHash?: string;
   paymentError?: string;
   paymentRecord?: PaymentRecord;
+  prUrl?: string;
+  autoCreatePR?: boolean;
   createdAt: number;
   completedAt?: number;
 }

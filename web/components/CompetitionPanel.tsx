@@ -349,7 +349,7 @@ function StatusMessage({
 function CompletionDetails({ competition }: { competition: Competition }) {
   const winner = competition.agents.find((a) => a.id === competition.winner);
   const [creatingPR, setCreatingPR] = useState(false);
-  const [prUrl, setPrUrl] = useState<string | null>(null);
+  const [prUrl, setPrUrl] = useState<string | null>(competition.prUrl || null);
   const [prError, setPrError] = useState<string | null>(null);
   const [codeOnly, setCodeOnly] = useState(false);
   const [countdown, setCountdown] = useState(10);
@@ -386,9 +386,10 @@ function CompletionDetails({ competition }: { competition: Competition }) {
     }
   };
 
-  // Auto-click PR button after x seconds
+  // Auto-click PR button ONLY if autoCreatePR is enabled
   useEffect(() => {
-    if (!prUrl && !creatingPR) {
+    // Only auto-create if explicitly enabled AND no PR exists yet
+    if (competition.autoCreatePR === true && !prUrl && !creatingPR) {
       const secsUntilAutoPR = 3;
       setCountdown(secsUntilAutoPR);
 
@@ -409,7 +410,19 @@ function CompletionDetails({ competition }: { competition: Competition }) {
         clearInterval(countdownInterval);
       };
     }
-  }, [prUrl, creatingPR]);
+  }, [prUrl, creatingPR, competition.autoCreatePR]);
+
+  // Update prUrl when competition.prUrl changes (backend auto-created it)
+  useEffect(() => {
+    if (competition.prUrl && !prUrl) {
+      setPrUrl(competition.prUrl);
+      // Cancel countdown if PR was created by backend
+      if (autoClickTimerRef.current) {
+        clearInterval(autoClickTimerRef.current);
+        autoClickTimerRef.current = null;
+      }
+    }
+  }, [competition.prUrl, prUrl]);
 
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
@@ -539,7 +552,7 @@ function CompletionDetails({ competition }: { competition: Competition }) {
                 ) : (
                   <>
                     <GitPullRequest className="w-4 h-4" />
-                    {countdown > 0 ? (
+                    {competition.autoCreatePR && countdown > 0 ? (
                       <span>Create PR from Solution ({countdown}s)</span>
                     ) : (
                       <span>Create PR from Solution</span>

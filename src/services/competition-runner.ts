@@ -25,7 +25,7 @@ export class CompetitionRunner {
   /**
    * Create a new competition from an issue
    */
-  async createCompetition(issue: Issue, bountyAmount?: number): Promise<Competition> {
+  async createCompetition(issue: Issue, bountyAmount?: number, autoCreatePR?: boolean): Promise<Competition> {
     const amount = bountyAmount ?? this.calculateBounty(issue);
 
     const competition: Competition = {
@@ -38,6 +38,7 @@ export class CompetitionRunner {
         name: agentConfig.name,
         status: 'idle' as const,
       })),
+      autoCreatePR: autoCreatePR ?? false,
       createdAt: Date.now(),
     };
 
@@ -372,6 +373,29 @@ export class CompetitionRunner {
             });
 
             const finalComp = await state.getCompetition(competition.id);
+
+            // Auto-create PR if enabled
+            let prUrl: string | undefined;
+            log('info', 'CompetitionRunner', `Checking auto-create PR: autoCreatePR=${competition.autoCreatePR}, type=${typeof competition.autoCreatePR}, strict check=${competition.autoCreatePR === true}`);
+            if (competition.autoCreatePR === true) {
+              try {
+                const winningSolution = successfulSolutions.find(s => s.agentId === reviewResult.winnerId);
+                if (winningSolution) {
+                  log('info', 'CompetitionRunner', `Auto-creating PR for winning solution (autoCreatePR=${competition.autoCreatePR})`);
+                  prUrl = await this.services.github.createSolutionPR(
+                    competition.issue,
+                    winningSolution,
+                    winnerConfig?.name || reviewResult.winnerId,
+                    false // Include explanation
+                  );
+                  log('info', 'CompetitionRunner', `PR created: ${prUrl}`);
+                  await state.updateCompetition(competition.id, { prUrl });
+                }
+              } catch (error) {
+                log('error', 'CompetitionRunner', `Failed to auto-create PR: ${error}`);
+              }
+            }
+
             await this.emitEvent({
               type: 'competition:completed',
               competitionId: competition.id,
@@ -380,6 +404,7 @@ export class CompetitionRunner {
                 competition: finalComp!,
                 winner: reviewResult.winnerId,
                 txHash,
+                prUrl,
               },
             });
           } catch (error) {
@@ -399,6 +424,28 @@ export class CompetitionRunner {
             });
 
             const finalComp = await state.getCompetition(competition.id);
+
+            // Auto-create PR if enabled (even if payment failed)
+            let prUrl: string | undefined;
+            if (competition.autoCreatePR === true) {
+              try {
+                const winningSolution = successfulSolutions.find(s => s.agentId === reviewResult.winnerId);
+                if (winningSolution) {
+                  log('info', 'CompetitionRunner', `Auto-creating PR for winning solution (autoCreatePR=${competition.autoCreatePR})`);
+                  prUrl = await this.services.github.createSolutionPR(
+                    competition.issue,
+                    winningSolution,
+                    winnerConfig?.name || reviewResult.winnerId,
+                    false // Include explanation
+                  );
+                  log('info', 'CompetitionRunner', `PR created: ${prUrl}`);
+                  await state.updateCompetition(competition.id, { prUrl });
+                }
+              } catch (error) {
+                log('error', 'CompetitionRunner', `Failed to auto-create PR: ${error}`);
+              }
+            }
+
             await this.emitEvent({
               type: 'competition:completed',
               competitionId: competition.id,
@@ -407,6 +454,7 @@ export class CompetitionRunner {
                 competition: finalComp!,
                 winner: reviewResult.winnerId,
                 error: errorMsg,
+                prUrl,
               },
             });
           }
@@ -420,6 +468,28 @@ export class CompetitionRunner {
           });
 
           const finalComp = await state.getCompetition(competition.id);
+
+          // Auto-create PR if enabled (even with no wallet)
+          let prUrl: string | undefined;
+          if (competition.autoCreatePR === true) {
+            try {
+              const winningSolution = successfulSolutions.find(s => s.agentId === reviewResult.winnerId);
+              if (winningSolution) {
+                log('info', 'CompetitionRunner', `Auto-creating PR for winning solution (autoCreatePR=${competition.autoCreatePR})`);
+                prUrl = await this.services.github.createSolutionPR(
+                  competition.issue,
+                  winningSolution,
+                  winnerConfig?.name || reviewResult.winnerId,
+                  false // Include explanation
+                );
+                log('info', 'CompetitionRunner', `PR created: ${prUrl}`);
+                await state.updateCompetition(competition.id, { prUrl });
+              }
+            } catch (error) {
+              log('error', 'CompetitionRunner', `Failed to auto-create PR: ${error}`);
+            }
+          }
+
           await this.emitEvent({
             type: 'competition:completed',
             competitionId: competition.id,
@@ -428,6 +498,7 @@ export class CompetitionRunner {
               competition: finalComp!,
               winner: reviewResult.winnerId,
               error: 'No wallet address configured',
+              prUrl,
             },
           });
         }

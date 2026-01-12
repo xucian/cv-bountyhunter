@@ -13,6 +13,9 @@ const CONFIG_DIR = join(homedir(), '.codebounty');
 const RECENT_REPOS_FILE = join(CONFIG_DIR, 'recent-repos.json');
 const REPOS_DIR = join(CONFIG_DIR, 'repos');
 
+// In-memory lock to prevent concurrent git operations on the same repo
+const repoLocks = new Map<string, Promise<any>>();
+
 export class RealGitHubService implements IGitHubService {
   /**
    * Check if user is authenticated with gh CLI
@@ -320,6 +323,41 @@ export class RealGitHubService implements IGitHubService {
     codeOnly = false
   ): Promise<string> {
     const repo = this.extractRepoPath(issue.repoUrl);
+    const lockKey = `${repo}-${issue.number}`;
+
+    // Wait for any existing operation on this repo+issue to complete
+    if (repoLocks.has(lockKey)) {
+      console.log(`[GitHub] Waiting for existing PR operation on ${lockKey}...`);
+      try {
+        await repoLocks.get(lockKey);
+      } catch {
+        // Previous operation failed, continue
+      }
+    }
+
+    // Create a new lock for this operation
+    const operation = this._createSolutionPRInternal(issue, solution, agentName, codeOnly);
+    repoLocks.set(lockKey, operation);
+
+    try {
+      const result = await operation;
+      return result;
+    } finally {
+      // Clean up lock after operation completes
+      repoLocks.delete(lockKey);
+    }
+  }
+
+  /**
+   * Internal implementation of createSolutionPR (called with lock held)
+   */
+  private async _createSolutionPRInternal(
+    issue: Issue,
+    solution: Solution,
+    agentName: string,
+    codeOnly: boolean
+  ): Promise<string> {
+    const repo = this.extractRepoPath(issue.repoUrl);
     const branchName = `codebounty/fix-issue-${issue.number}`;
 
     try {
@@ -378,8 +416,20 @@ export class RealGitHubService implements IGitHubService {
       try {
         await execAsync(`git checkout ${defaultBranch}`, { cwd: localPath });
       } catch {
-        // If local branch doesn't exist, create from remote
-        await execAsync(`git checkout -b ${defaultBranch} origin/${defaultBranch}`, { cwd: localPath });
+        // If checkout fails, try force checkout first
+        try {
+          await execAsync(`git checkout -f ${defaultBranch}`, { cwd: localPath });
+        } catch {
+          // If still fails, branch doesn't exist locally - create from remote
+          // Check if branch exists remotely first to avoid race with -b flag
+          try {
+            await execAsync(`git fetch origin ${defaultBranch}:${defaultBranch}`, { cwd: localPath });
+            await execAsync(`git checkout ${defaultBranch}`, { cwd: localPath });
+          } catch {
+            // Last resort: checkout remote branch directly
+            await execAsync(`git checkout -B ${defaultBranch} origin/${defaultBranch}`, { cwd: localPath });
+          }
+        }
       }
 
       // Pull latest changes

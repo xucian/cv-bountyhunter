@@ -7,7 +7,7 @@ import type { IGitHubService } from '../../types/services.js';
 
 interface MainMenuProps {
   githubService: IGitHubService;
-  onStartCompetition: (issue: Issue) => void | Promise<void>;
+  onStartCompetition: (issue: Issue, autoCreatePR: boolean) => void | Promise<void>;
   onViewHistory?: () => void;
   onViewLeaderboard?: () => void;
 }
@@ -22,6 +22,7 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoCreatePR, setAutoCreatePR] = useState(true);
 
   // New issue form
   const [newIssueTitle, setNewIssueTitle] = useState('');
@@ -83,7 +84,7 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
       );
       console.log('[MainMenu] Issue created:', issue.number);
       console.log('[MainMenu] Calling onStartCompetition for new issue...');
-      onStartCompetition(issue);
+      onStartCompetition(issue, autoCreatePR);
       console.log('[MainMenu] onStartCompetition called for new issue');
     } catch (err) {
       console.error('[MainMenu] Failed to create issue:', err);
@@ -113,7 +114,7 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
         } else if (issues[selectedIndex]) {
           console.log('[MainMenu] User selected issue:', issues[selectedIndex].number);
           console.log('[MainMenu] Calling onStartCompetition...');
-          onStartCompetition(issues[selectedIndex]);
+          onStartCompetition(issues[selectedIndex], autoCreatePR);
           console.log('[MainMenu] onStartCompetition called');
         }
       } else if (input === 'r' || input === 'R') {
@@ -121,6 +122,8 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
       } else if (input === 'n' || input === 'N') {
         setScreen('create-issue');
         setSelectedIndex(0);
+      } else if (input === 'p' || input === 'P') {
+        setAutoCreatePR(!autoCreatePR);
       } else if ((input === 'h' || input === 'H') && onViewHistory) {
         onViewHistory();
       } else if ((input === 'l' || input === 'L') && onViewLeaderboard) {
@@ -133,6 +136,8 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
         handleCreateIssue();
       } else if (key.escape) {
         setScreen('issues');
+      } else if (input === 'p' || input === 'P') {
+        setAutoCreatePR(!autoCreatePR);
       }
     }
   });
@@ -232,8 +237,14 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
         </Box>
 
         <Box marginTop={2} flexDirection="column">
-          <Text dimColor>↑↓ select | ENTER confirm | N new issue | R change repo</Text>
-          <Text dimColor>H history | L leaderboard</Text>
+          <Box>
+            <Text color={autoCreatePR ? 'green' : 'gray'}>[{autoCreatePR ? '✓' : ' '}]</Text>
+            <Text> Auto-create PR (press P to toggle)</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>↑↓ select | ENTER confirm | N new issue | R change repo</Text>
+          </Box>
+          <Text dimColor>H history | L leaderboard | P toggle auto-PR</Text>
         </Box>
       </Box>
     );
@@ -281,7 +292,13 @@ export function MainMenu({ githubService, onStartCompetition, onViewHistory, onV
         )}
 
         <Box marginTop={2} flexDirection="column">
-          <Text dimColor>TAB to switch fields, ENTER to create, ESC to go back</Text>
+          <Box>
+            <Text color={autoCreatePR ? 'green' : 'gray'}>[{autoCreatePR ? '✓' : ' '}]</Text>
+            <Text> Auto-create PR (press P to toggle)</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>TAB to switch fields, ENTER to create, ESC to go back, P toggle auto-PR</Text>
+          </Box>
         </Box>
 
         <Box marginTop={2} justifyContent="center">

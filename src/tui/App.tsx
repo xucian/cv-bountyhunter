@@ -41,10 +41,11 @@ export function App() {
 
   // Handle starting a new competition with an Issue
   const handleStartCompetition = useCallback(
-    async (issue: Issue) => {
+    async (issue: Issue, autoCreatePR: boolean) => {
       console.log('[TUI] ========================================');
       console.log('[TUI] handleStartCompetition INVOKED');
       console.log('[TUI] Issue:', issue.repoUrl, '#', issue.number);
+      console.log('[TUI] Auto-create PR:', autoCreatePR);
       console.log('[TUI] ========================================');
       try {
         console.log('[TUI] Setting view to competition...');
@@ -58,7 +59,8 @@ export function App() {
         // 4. Payment
         const completedCompetition = await orchestrator.startCompetition(
           issue.repoUrl,
-          issue.number
+          issue.number,
+          autoCreatePR
         );
 
         console.log('[TUI] Competition completed:', completedCompetition.id);

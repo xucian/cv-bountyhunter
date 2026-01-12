@@ -23,15 +23,22 @@ export async function GET(request: NextRequest) {
  * POST /api/competitions
  * Start a new competition by calling the WS server
  *
- * Body: { issue: Issue, bountyAmount?: number }
+ * Body: { issue: Issue, bountyAmount?: number, autoCreatePR?: boolean }
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { issue, bountyAmount } = body as {
+    const { issue, bountyAmount, autoCreatePR } = body as {
       issue: Issue;
       bountyAmount?: number;
+      autoCreatePR?: boolean;
     };
+
+    console.log('[API] Received competition request:', {
+      issueNumber: issue?.number,
+      autoCreatePR,
+      autoCreatePRType: typeof autoCreatePR,
+    });
 
     if (!issue || !issue.title || !issue.repoUrl) {
       return NextResponse.json(
@@ -42,10 +49,13 @@ export async function POST(request: NextRequest) {
 
     // Call the WS server to create and run the competition
     const wsServerUrl = process.env.WS_SERVER_URL || 'http://localhost:4000';
+    const payload = { issue, bountyAmount, autoCreatePR };
+    console.log('[API] Sending to WS server:', JSON.stringify({ autoCreatePR, bountyAmount }));
+
     const response = await fetch(`${wsServerUrl}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ issue, bountyAmount }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

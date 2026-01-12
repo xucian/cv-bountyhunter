@@ -183,6 +183,7 @@ export interface CompetitionCompletedEvent extends CompetitionEventBase {
     winner?: string;
     txHash?: string;
     error?: string;
+    prUrl?: string;
   };
 }
 

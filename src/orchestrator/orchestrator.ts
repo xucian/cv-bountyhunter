@@ -21,11 +21,12 @@ export class Orchestrator {
    * Start a new competition for a GitHub issue
    * Fetches issue, indexes repo, creates competition, runs agents, picks winner, pays them
    */
-  async startCompetition(repoUrl: string, issueNumber: number): Promise<Competition> {
+  async startCompetition(repoUrl: string, issueNumber: number, autoCreatePR: boolean = false): Promise<Competition> {
     console.log('[Orchestrator] ========================================');
     console.log('[Orchestrator] START COMPETITION CALLED');
     console.log('[Orchestrator] Repo:', repoUrl);
     console.log('[Orchestrator] Issue #:', issueNumber);
+    console.log('[Orchestrator] Auto-create PR:', autoCreatePR);
     console.log('[Orchestrator] ========================================');
 
     // 1. Fetch issue from GitHub
@@ -55,6 +56,7 @@ export class Orchestrator {
       bountyAmount: this.calculateBounty(issue),
       status: 'pending',
       agents: this.initializeAgentStatuses(),
+      autoCreatePR,
       createdAt: Date.now(),
     };
 
@@ -124,7 +126,15 @@ export class Orchestrator {
       await this.payWinner(competition);
     }
 
-    // 7. Mark competition as completed
+    // 7. Auto-create PR if enabled and we have a winner
+    if (autoCreatePR === true && reviewResult.winnerId) {
+      console.log(`[Orchestrator] Auto-creating PR (autoCreatePR=${autoCreatePR})`);
+      await this.createPRForWinner(competition);
+    } else {
+      console.log(`[Orchestrator] Skipping auto-create PR (autoCreatePR=${autoCreatePR}, winnerId=${reviewResult.winnerId})`);
+    }
+
+    // 8. Mark competition as completed
     const completedAt = Date.now();
     await this.services.state.updateCompetition(competition.id, {
       status: 'completed',
@@ -351,6 +361,39 @@ export class Orchestrator {
     } catch (error) {
       // Don't fail the payment if we can't save the record
       console.warn('[Orchestrator] Failed to save payment record:', error);
+    }
+  }
+
+  /**
+   * Create a PR for the winning solution
+   */
+  private async createPRForWinner(competition: Competition): Promise<void> {
+    if (!competition.winner) return;
+
+    const winningAgent = competition.agents.find(a => a.id === competition.winner);
+    if (!winningAgent?.solution) {
+      console.error('[Orchestrator] No solution found for winner');
+      return;
+    }
+
+    try {
+      console.log(`[Orchestrator] Creating PR for winning solution from ${winningAgent.name}...`);
+
+      const prUrl = await this.services.github.createSolutionPR(
+        competition.issue,
+        winningAgent.solution,
+        winningAgent.name,
+        false // Include explanation
+      );
+
+      console.log(`[Orchestrator] PR created successfully: ${prUrl}`);
+
+      // Update competition with PR URL
+      competition.prUrl = prUrl;
+      await this.services.state.updateCompetition(competition.id, { prUrl });
+    } catch (error) {
+      console.error(`[Orchestrator] Failed to create PR:`, error);
+      // Don't fail the competition if PR creation fails
     }
   }
 

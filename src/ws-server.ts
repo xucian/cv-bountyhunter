@@ -55,7 +55,11 @@ const httpServer = createServer(async (req, res) => {
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
       try {
-        const { issue, bountyAmount } = JSON.parse(body) as { issue: Issue; bountyAmount?: number };
+        const { issue, bountyAmount, autoCreatePR } = JSON.parse(body) as {
+          issue: Issue;
+          bountyAmount?: number;
+          autoCreatePR?: boolean;
+        };
 
         if (!issue || !issue.title || !issue.repoUrl) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -63,10 +67,16 @@ const httpServer = createServer(async (req, res) => {
           return;
         }
 
-        log('info', 'WS', `Starting competition for issue: ${issue.title}`);
+        // Explicitly set autoCreatePR to false if not provided or if explicitly false
+        const shouldAutoCreatePR = autoCreatePR === true;
 
-        // Create and run competition
-        const competition = await competitionRunner.createCompetition(issue, bountyAmount);
+        log('info', 'WS', `Starting competition for issue: ${issue.title}`);
+        log('info', 'WS', `Auto-create PR setting - received: ${autoCreatePR}, will use: ${shouldAutoCreatePR}`);
+
+        // Create and run competition WITH autoCreatePR flag
+        const competition = await competitionRunner.createCompetition(issue, bountyAmount, shouldAutoCreatePR);
+
+        log('info', 'WS', `Competition ${competition.id} created with autoCreatePR: ${competition.autoCreatePR}`);
 
         // Run in background (don't await)
         competitionRunner.run(competition).catch(err => {
@@ -114,6 +124,14 @@ const httpServer = createServer(async (req, res) => {
           return;
         }
 
+        // If PR already exists, return it immediately (deduplication)
+        if (competition.prUrl) {
+          log('info', 'WS', `PR already exists for competition ${competitionId}: ${competition.prUrl}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ prUrl: competition.prUrl, competitionId, cached: true }));
+          return;
+        }
+
         if (!competition.winner) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Competition has no winner' }));
@@ -135,6 +153,9 @@ const httpServer = createServer(async (req, res) => {
           winningAgent.name,
           codeOnly
         );
+
+        // Save PR URL to competition
+        await services.state.updateCompetition(competitionId, { prUrl });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ prUrl, competitionId }));
